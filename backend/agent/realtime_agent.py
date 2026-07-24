@@ -147,6 +147,8 @@ class RealtimeAgent:
         )
         self._response_authorized = not self._manual_turn_mode
         self._discarding_unauthorized_response = False
+        self._response_in_progress = False
+        self._active_assistant_item_id: str | None = None
 
     async def run(self, client_ws: object) -> None:
         """Run the realtime agent.
@@ -332,14 +334,22 @@ class RealtimeAgent:
 
             elif msg_type == "control.commit":
                 # Manual VAD: commit audio buffer and trigger response
+                if self._manual_turn_mode and self._response_in_progress:
+                    logger.info("Ignored duplicate manual commit while response is active")
+                    continue
                 self._response_authorized = True
                 self._discarding_unauthorized_response = False
+                self._response_in_progress = True
+                self._active_assistant_item_id = None
                 await upstream.commit_audio()
                 await upstream.create_response()
                 self._set_state(RealtimeAgentState.THINKING)
 
             elif msg_type == "control.interrupt":
                 await upstream.cancel_response()
+                self._response_in_progress = False
+                self._response_authorized = not self._manual_turn_mode
+                self._active_assistant_item_id = None
                 await self._push_to_client(client_ws, FrontendEvent(
                     type=EventType.AI_INTERRUPTED,
                     payload={},
@@ -349,8 +359,13 @@ class RealtimeAgent:
                 text = payload.get("text", "")
                 if text:
                     # Inject as user message and trigger response
+                    if self._manual_turn_mode and self._response_in_progress:
+                        logger.info("Ignored user text while manual response is active")
+                        continue
                     self._response_authorized = True
                     self._discarding_unauthorized_response = False
+                    self._response_in_progress = True
+                    self._active_assistant_item_id = None
                     await upstream.inject_summary(
                         json.dumps({"role": "user", "content": text})
                     )
@@ -399,6 +414,23 @@ class RealtimeAgent:
                     )
                     await upstream.cancel_response()
                 continue
+
+            if self._manual_turn_mode and isinstance(event, (
+                ResponseAudioDelta,
+                ResponseAudioDone,
+                ResponseAudioTranscriptDelta,
+                ResponseAudioTranscriptDone,
+            )):
+                item_id = event.item_id
+                if item_id and self._active_assistant_item_id is None:
+                    self._active_assistant_item_id = item_id
+                elif item_id and item_id != self._active_assistant_item_id:
+                    logger.warning(
+                        "Ignored duplicate assistant item %s for manual turn (active=%s)",
+                        item_id,
+                        self._active_assistant_item_id,
+                    )
+                    continue
 
             if isinstance(event, SessionCreated):
                 logger.debug("Realtime session created: %s", event.session_id)
@@ -475,6 +507,8 @@ class RealtimeAgent:
                 await self._on_response_done(event)
                 if self._manual_turn_mode:
                     self._response_authorized = False
+                    self._response_in_progress = False
+                    self._active_assistant_item_id = None
                 if not self._closed:
                     await self._push_to_client(client_ws, FrontendEvent(
                         type=EventType.STATE_CHANGED,

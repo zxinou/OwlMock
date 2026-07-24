@@ -5,7 +5,6 @@ import { PcmPlayer, PcmStreamCapture } from '@/utils/voiceAudio.js'
 
 const CONNECT_TIMEOUT_MS = 12000
 const SUBMIT_TIMEOUT_MS = 35000
-const MIN_ANSWER_MS = 700
 
 export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) {
   const connected = ref(false)
@@ -27,8 +26,7 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
   let outputSampleRate = 24000
   let connectionTimer = null
   let submitTimer = null
-  let recordingStartedAt = 0
-  let speechDetected = false
+  let audioChunksSent = 0
 
   function formatVoiceError(payload) {
     const code = payload?.code || ''
@@ -63,8 +61,7 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
   }
 
   function resetRecordingEvidence() {
-    recordingStartedAt = 0
-    speechDetected = false
+    audioChunksSent = 0
   }
 
   function startSubmitTimer() {
@@ -90,18 +87,23 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
   }
 
   async function startCapture() {
-    if (isPaused || capture || !connected.value) return false
+    if (isPaused || !connected.value) return false
+    if (capture) {
+      isListening.value = true
+      return true
+    }
     try {
       capture = new PcmStreamCapture({
         sampleRate: inputSampleRate,
         onChunk: (audio) => {
           if (!isPaused && answerState.value === 'recording' && ws?.readyState === WebSocket.OPEN) {
-            send({ type: 'user.audio.chunk', payload: { audio } })
+            if (send({ type: 'user.audio.chunk', payload: { audio } })) {
+              audioChunksSent += 1
+            }
           }
         },
         onActive: (active) => {
           waveformActive.value = active && answerState.value === 'recording'
-          if (active && answerState.value === 'recording') speechDetected = true
         },
       })
       await capture.start()
@@ -118,6 +120,11 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
   function stopCapture() {
     capture?.stop()
     capture = null
+    isListening.value = false
+    waveformActive.value = false
+  }
+
+  function suspendCapture() {
     isListening.value = false
     waveformActive.value = false
   }
@@ -143,7 +150,7 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
   function beginAssistantTurn() {
     clearSubmitTimer()
     error.value = null
-    stopCapture()
+    suspendCapture()
     answerState.value = 'waiting'
     hintText.value = '请听面试官提问'
     avatarSpeaking.value = true
@@ -310,19 +317,17 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
       answerState.value = 'ready'
       return false
     }
-    recordingStartedAt = Date.now()
     return true
   }
 
   function finishAnswer() {
     if (!connected.value || answerState.value !== 'recording') return false
-    const recordingDuration = Date.now() - recordingStartedAt
-    stopCapture()
+    suspendCapture()
 
-    if (recordingDuration < MIN_ANSWER_MS || !speechDetected) {
+    if (audioChunksSent === 0) {
       resetRecordingEvidence()
       answerState.value = 'ready'
-      error.value = '没有检测到有效回答，请靠近麦克风后重试'
+      error.value = '没有采集到音频，请检查麦克风后重试'
       hintText.value = error.value
       return false
     }
