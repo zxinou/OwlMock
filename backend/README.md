@@ -1,4 +1,4 @@
-# Backend — CapyMock API
+# Backend — OwlMock API
 
 AI 求职助手后端，基于 FastAPI + ReAct Agent + Realtime Voice 架构。
 
@@ -8,7 +8,7 @@ AI 求职助手后端，基于 FastAPI + ReAct Agent + Realtime Voice 架构。
 - **Framework:** FastAPI
 - **Database:** SQLite (aiosqlite) + SQLAlchemy 2.0
 - **Package Manager:** uv
-- **LLM Providers:** MiMo, DashScope, DeepSeek（文本）；DashScope Qwen-Omni, OpenAI Realtime（语音）
+- **LLM Providers:** DashScope Qwen、智谱 GLM（文本）；DashScope Qwen-Omni（语音）
 - **Observability:** Langfuse (OpenTelemetry SDK v4)
 
 ## Project Structure
@@ -32,13 +32,11 @@ backend/
 │       ├── factory.py          # LLMFactory 注册表
 │       ├── providers/          # 文本 LLM provider
 │       │   ├── openai_compatible.py  # OpenAI 兼容基类
-│       │   ├── deepseek.py           # DeepSeek 适配器
 │       │   ├── dashscope_compat.py   # DashScope 适配器
-│       │   └── mimo.py               # MiMo（小米）适配器
+│       │   └── zhipu.py              # 智谱 GLM 适配器
 │       └── realtime/           # 实时语音 LLM provider
 │           ├── base.py             # RealtimeSession 抽象类
 │           ├── events.py           # 14 种实时事件 dataclass
-│           ├── openai_realtime.py  # OpenAI Realtime 适配器
 │           └── dashscope_realtime.py # DashScope Qwen-Omni 适配器
 ├── api/                    # FastAPI 路由
 │   ├── app.py                  # FastAPI app + lifespan
@@ -46,8 +44,9 @@ backend/
 │   ├── chat.py                 # SSE 流式对话端点
 │   ├── ws.py                   # WebSocket 语音模式
 │   ├── github_analysis.py      # GitHub 分析任务
-│   ├── jd_analysis.py          # JD 分析
+│   ├── jd_analysis.py          # JD 文字/图片异步分析
 │   ├── resume_analysis.py      # 简历上传与分析
+│   ├── resume_matches.py       # 简历与已分析岗位匹配
 │   ├── tasks.py                # 异步任务进度 API
 │   ├── schemas.py              # FrontendEvent + 请求/响应模型
 │   └── deps.py                 # 依赖注入
@@ -59,6 +58,7 @@ backend/
 │       ├── interviewer-comprehensive.yaml  # 综合面试官
 │       ├── jd-analyzer.yaml                # JD 分析
 │       ├── resume-analyzer.yaml            # 简历分析
+│       ├── resume-matcher.yaml             # 简历岗位匹配
 │       ├── repo-analyzer.yaml              # 仓库分析
 │       ├── summary-generator.yaml          # 总结生成
 │       └── mid-summary-injector.yaml       # 语音中注入摘要
@@ -68,6 +68,9 @@ backend/
 ├── service/
 │   ├── session_service.py      # 会话管理
 │   ├── task_service.py         # 异步任务管理
+│   ├── repo_indexer.py         # Repository Index / Context
+│   ├── jd_report.py            # JD 结构化报告
+│   ├── resume_match_report.py  # 简历匹配报告
 │   ├── resume_media.py         # PDF/图片处理（PyMuPDF）
 │   └── summary_utils.py        # 总结工具（fallback 检测）
 ├── storage/
@@ -83,12 +86,13 @@ backend/
 │   ├── registry.py             # ToolRegistry 显式注册
 │   ├── executor.py             # ToolExecutor 并发执行
 │   ├── sandbox.py              # 沙箱路径校验
-│   └── builtins/               # 9 个内建工具
+│   └── builtins/               # 内建工具
 │       ├── clone_repo.py           # Git 仓库克隆
 │       ├── list_directory.py       # 目录列表
 │       ├── read_file.py            # 文件读取
 │       ├── search_code.py          # 代码搜索（ripgrep）
 │       ├── save_repo_analysis.py   # 保存分析结果
+│       ├── read_repo_context.py    # 读取统一仓库上下文
 │       ├── read_resume.py          # 读取简历
 │       ├── query_github_analysis.py # 查询分析结果
 │       ├── read_skill.py           # 读取技能定义
@@ -117,6 +121,7 @@ backend/
 POST   /api/sessions                    # 创建会话
 GET    /api/sessions                    # 列表 + 筛选 + 排序
 GET    /api/sessions/{id}               # 单条详情
+DELETE /api/sessions/{id}               # 删除面试记录 + 事件日志
 GET    /api/sessions/{id}/events        # 事件回放
 POST   /api/sessions/{id}/finalize      # 生成总结 + 写入记忆
 ```
@@ -137,11 +142,16 @@ POST   /api/analysis                    # 提交 GitHub 仓库分析
 GET    /api/analysis                    # 列表所有分析
 GET    /api/analysis/{id}               # 单条分析结果
 POST   /api/jd/analyze                  # JD 文本分析
+POST   /api/jd/analyses                 # 提交异步 JD 文本任务
+POST   /api/jd/analyses/image           # 提交异步 JD 图片任务
+GET    /api/jd/analyses                 # JD 历史记录
 POST   /api/resumes/upload              # 上传简历（PDF/图片）
 GET    /api/resumes                     # 简历列表
 GET    /api/resumes/{id}                # 简历详情 + 分析结果
 DELETE /api/resumes/{id}                # 删除简历
 POST   /api/resumes/{id}/analyze        # 触发简历分析
+POST   /api/resume-matches/batch         # 一份简历批量匹配多个 JD
+GET    /api/resume-match-batches/{id}    # 批量匹配进度与结果
 ```
 
 ### 任务 API
@@ -172,13 +182,13 @@ POST   /api/tasks/{id}/cancel           # 取消任务
 双泵架构，桥接客户端 WebSocket 与实时语音 LLM：
 
 ```
-客户端 WebSocket ←→ RealtimeAgent ←→ 实时 LLM（DashScope / OpenAI）
+客户端 WebSocket ←→ RealtimeAgent ←→ 实时 LLM（DashScope Qwen-Omni）
        音频帧                  双向泵                  音频 + 转写 + 工具调用
 ```
 
 特性：
-- **VAD 模式** — semantic_vad（默认）/ server_vad / none
-- **Barge-in** — 用户说话时自动打断 AI 回复
+- **手动分轮** — 当前面试 profile 使用 `vad_mode: none`，点击“回答完毕”后才提交本轮音频
+- **可配置 VAD** — Provider 仍支持 semantic/server/none，便于扩展其他语音交互
 - **MidSummary** — 每 7 分钟注入上下文摘要，防止长会话遗忘
 - **成本控制** — 15 分钟会话上限 + 不活跃超时检测
 - **文字转语音** — 支持从文字面试无缝切换到语音面试
@@ -194,6 +204,7 @@ POST   /api/tasks/{id}/cancel           # 取消任务
 | `interviewer-comprehensive` | 综合面试官（技术 + 行为） | 文字 + 语音 |
 | `jd-analyzer` | 岗位描述分析 | 文字 |
 | `resume-analyzer` | 简历分析（多模态） | 文字 |
+| `resume-matcher` | 简历与一个或多个已分析岗位匹配 | 文字 + 多模态 |
 | `repo-analyzer` | GitHub 仓库分析（含工具链） | 文字 |
 | `summary-generator` | 面试总结生成 | 文字 |
 | `mid-summary-injector` | 语音会话中注入摘要 | 文字（子 agent） |
@@ -201,13 +212,11 @@ POST   /api/tasks/{id}/cancel           # 取消任务
 ### LLM Providers
 
 **文本模式**（继承 `OpenAICompatibleLLM`）：
-- `mimo` — 小米 MiMo（支持 thinking/reasoning 模式）
-- `deepseek` — DeepSeek API
 - `dashscope` — 阿里 DashScope
+- `zhipu` — 智谱 GLM OpenAI 兼容接口
 
 **语音模式**（实现 `BaseRealtimeLLM` + `RealtimeSession`）：
 - `dashscope_realtime` — DashScope Qwen-Omni Realtime
-- `openai_realtime` — OpenAI Realtime API
 
 ### 工具系统
 
@@ -218,6 +227,7 @@ POST   /api/tasks/{id}/cancel           # 取消任务
 | `read_file` | 读取文件内容 |
 | `search_code` | 代码搜索（ripgrep） |
 | `save_repo_analysis` | 保存仓库分析结果 |
+| `read_repo_context` | 读取 `repo_index.json` 形成的统一仓库上下文 |
 | `read_resume` | 读取用户简历 |
 | `query_github_analysis` | 查询 GitHub 分析结果 |
 | `read_skill` | 读取技能定义 |
@@ -231,11 +241,11 @@ POST   /api/tasks/{id}/cancel           # 取消任务
 
 ```
 <root>/<user_id>/user.md                    — 用户画像（跨简历共享）
-<root>/<user_id>/<resume_id>/CAPY_NOTE.md  — 简历级面试笔记
+<root>/<user_id>/<resume_id>/CAPY_NOTE.md  — 简历级面试笔记（历史文件名，内容为猫头鹰面试官记忆）
 <root>/<user_id>/<resume_id>/REAL_QUES.md  — 真实面试题记录
 ```
 
-面试总结生成时自动写入 `capy_note` 和 `user_md`；面试过程中 agent 可通过 `save_real_question` 工具记录用户提到的真实面试题。
+面试总结生成时自动写入面试官观察笔记和 `user_md`；面试过程中 agent 可通过 `save_real_question` 工具记录用户提到的真实面试题。
 
 ### 双层事件协议
 
@@ -324,10 +334,8 @@ uv run mypy backend
 
 | 变量 | 说明 |
 |------|------|
-| `MIMO_API_KEY` | MiMo LLM API 密钥 |
 | `DASHSCOPE_API_KEY` | DashScope API 密钥（文本 + 语音） |
-| `DEEPSEEK_API_KEY` | DeepSeek API 密钥 |
-| `OPENAI_API_KEY` | OpenAI API 密钥（语音模式） |
+| `ZHIPU_API_KEY` | 智谱 GLM API 密钥（备用文本模型） |
 | `TRACER` | `noop` 或 `langfuse` |
 | `SQLITE_PATH` | SQLite 数据库路径 |
 | `JSONL_ROOT` | JSONL 会话文件根目录 |

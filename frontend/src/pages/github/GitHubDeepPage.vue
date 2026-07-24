@@ -139,7 +139,7 @@ function scrollToSection(id) {
     <LoadingOverlay
       :active="loading || phase === 'analyzing' || phase === 'submitting' || phase === 'fetching'"
       :text="phase === 'analyzing' ? '正在分析代码仓库' : '正在生成深度分析报告'"
-      :subtext="progressMessage || 'Capy 正在深入阅读代码、生成分析...'"
+      :subtext="progressMessage || '猫头鹰助手正在深入阅读代码、生成分析...'"
     />
   </div>
 </template>

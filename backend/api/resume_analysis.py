@@ -3,25 +3,26 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
-from pydantic import BaseModel
-from sqlalchemy import select
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select
 
-from agent.llm.factory import LLMFactory
 from agent.llm.providers.openai_compatible import build_multimodal_message
+from agent.llm.router import chat_structured_with_fallback
 from agent.profile_loader import ProfileLoader
-from config.settings import settings
 from service.resume_media import extract_resume_text, prepare_resume_images
 from storage.db.engine import async_session_factory
-from storage.db.models import Resume
+from storage.db.models import Resume, ResumeMatchRecord
+from trace import trace_analysis_request
 
 router = APIRouter(tags=["resumes"])
+logger = logging.getLogger(__name__)
 
-# Supported file types
 ALLOWED_TYPES = {"application/pdf", "image/png", "image/jpeg"}
 TYPE_EXTENSIONS = {
     "application/pdf": "pdf",
@@ -33,14 +34,18 @@ MIME_TYPES = {
     "png": "image/png",
     "jpg": "image/jpeg",
 }
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-# Resume file storage root
+MAX_FILE_SIZE = 10 * 1024 * 1024
 RESUME_ROOT = Path("storage/resumes")
+ANALYSIS_UNAVAILABLE = (
+    "\u5206\u6790\u7ed3\u679c\u6682\u65f6\u65e0\u6cd5\u751f\u6210"
+    "\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
+)
+ANALYZE_RESUME_PROMPT = "\u8bf7\u5206\u6790\u8fd9\u4efd\u7b80\u5386{page_hint}"
 
 
 class ResumeResponse(BaseModel):
     """Response for resume metadata."""
+
     id: str
     file_name: str | None = None
     file_type: str | None = None
@@ -50,6 +55,7 @@ class ResumeResponse(BaseModel):
 
 class ResumeDetailResponse(BaseModel):
     """Response for resume detail."""
+
     id: str
     file_name: str | None = None
     file_type: str | None = None
@@ -58,31 +64,42 @@ class ResumeDetailResponse(BaseModel):
     created_at: str | None = None
 
 
+class ResumeStrength(BaseModel):
+    text: str = Field(min_length=1)
+    detail: str = Field(min_length=1)
+
+
+class ResumeWeakness(BaseModel):
+    text: str = Field(min_length=1)
+    suggestion: str = Field(min_length=1)
+
+
+class ResumeAnalysis(BaseModel):
+    strengths: list[ResumeStrength]
+    weaknesses: list[ResumeWeakness]
+    suggestions: list[str]
+
+
 @router.post("/resumes/upload")
 async def upload_resume(file: UploadFile, user_id: str = "default"):
     """Upload a resume file (PDF, PNG, JPG)."""
-    # Validate content type
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type: {file.content_type}. Allowed: PDF, PNG, JPG",
         )
 
-    # Read file content
     content = await file.read()
 
-    # Validate file size
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File size cannot exceed 10MB")
 
-    # Generate ID and paths
     resume_id = str(uuid.uuid4())
     ext = TYPE_EXTENSIONS[file.content_type]
     user_dir = RESUME_ROOT / user_id
     os.makedirs(user_dir, exist_ok=True)
     file_path = user_dir / f"{resume_id}.{ext}"
 
-    # Save file to disk
     with open(file_path, "wb") as f:
         f.write(content)
 
@@ -91,7 +108,6 @@ async def upload_resume(file: UploadFile, user_id: str = "default"):
     except Exception:
         text_content = ""
 
-    # Save metadata to DB
     async with async_session_factory() as db:
         resume = Resume(
             id=resume_id,
@@ -173,11 +189,21 @@ async def delete_resume(resume_id: str):
         if not resume:
             raise HTTPException(status_code=404, detail="Resume not found")
 
-        # Delete file from disk
         if resume.file_path and os.path.exists(resume.file_path):
             os.remove(resume.file_path)
 
-        # Delete DB record
+        matches = (await db.execute(
+            select(ResumeMatchRecord.id).where(ResumeMatchRecord.resume_id == resume_id)
+        )).scalars().all()
+        if matches:
+            from api.resume_matches import cancel_resume_match_task
+
+            for match_id in matches:
+                await cancel_resume_match_task(match_id)
+            await db.execute(
+                delete(ResumeMatchRecord).where(ResumeMatchRecord.resume_id == resume_id)
+            )
+
         await db.delete(resume)
         await db.commit()
 
@@ -192,14 +218,12 @@ async def analyze_resume(resume_id: str, force: bool = False):
         if not resume:
             raise HTTPException(status_code=404, detail="Resume not found")
 
-        # Return cached result if available and not forcing
         if resume.analysis_result and not force:
             try:
                 return json.loads(resume.analysis_result)
             except json.JSONDecodeError:
-                pass  # re-analyze if cache is corrupt
+                pass
 
-    # Load profile and prompt
     profile_loader = ProfileLoader("config/agents")
     profile_loader.load_all()
     profile = profile_loader.get("resume-analyzer")
@@ -220,41 +244,60 @@ async def analyze_resume(resume_id: str, force: bool = False):
     except Exception as exc:
         raise HTTPException(500, f"Failed to prepare resume images: {exc}") from exc
 
-    page_hint = ""
-    if resume.file_type == "pdf" and len(images) > 1:
-        page_hint = f"（共 {len(images)} 页）"
-
-    # Create LLM
-    llm = LLMFactory.create(
-        profile.llm.provider,
-        {
-            "api_key": settings.get_api_key(profile.llm.provider),
-            "model": profile.llm.model,
-            "temperature": profile.llm.temperature,
-        },
+    page_hint = f"\uff08\u5171 {len(images)} \u9875\uff09" if len(images) > 1 else ""
+    user_msg = build_multimodal_message(
+        ANALYZE_RESUME_PROMPT.format(page_hint=page_hint),
+        images=images,
     )
-
-    user_msg = build_multimodal_message(f"请分析这份简历{page_hint}", images=images)
     messages = [
         {"role": "system", "content": prompt},
         user_msg,
     ]
 
-    llm_result = await llm.chat(messages)
+    with trace_analysis_request(
+        kind="resume",
+        user_id=resume.user_id,
+        input_summary={
+            "resume_id": resume_id,
+            "file_type": resume.file_type,
+            "page_count": len(images),
+            "force": force,
+        },
+    ) as span:
+        structured = await chat_structured_with_fallback(
+            profile.llm,
+            messages,
+            ResumeAnalysis,
+        )
+        if structured.value is None:
+            logger.warning(
+                "Resume analysis failed provider=%s model=%s provider_error=%s parse_error=%s",
+                profile.llm.provider,
+                profile.llm.model,
+                bool(structured.completion.error),
+                structured.parse_error or "none",
+            )
+            span.update(
+                output={
+                    "status": "failed",
+                    "provider_error": bool(structured.completion.error),
+                    "parse_error": bool(structured.parse_error),
+                },
+                level="ERROR",
+                status_message=structured.completion.error or structured.parse_error or None,
+            )
+            raise HTTPException(502, ANALYSIS_UNAVAILABLE)
 
-    if llm_result.error:
-        raise HTTPException(502, f"LLM error: {llm_result.error}")
+        data = structured.value.model_dump()
+        span.update(
+            output={
+                "status": "ok",
+                "strengths": len(data["strengths"]),
+                "weaknesses": len(data["weaknesses"]),
+                "suggestions": len(data["suggestions"]),
+            }
+        )
 
-    if not llm_result.text:
-        raise HTTPException(502, "LLM returned empty response")
-
-    # Parse JSON
-    try:
-        data = json.loads(llm_result.text)
-    except json.JSONDecodeError:
-        raise HTTPException(500, f"LLM returned invalid JSON: {llm_result.text[:200]}")
-
-    # Cache result
     async with async_session_factory() as db:
         result = await db.execute(select(Resume).where(Resume.id == resume_id))
         resume = result.scalar_one_or_none()

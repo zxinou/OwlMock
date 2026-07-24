@@ -1,12 +1,12 @@
 id: "interviewer-technical"
 prompt_template: "data/prompt/interviewer_technical.md"
 llm:
-  provider: "mimo"
-  model: "mimo-v2.5-pro"
+  provider: "dashscope"
+  model: "qwen3.5-omni-plus-2026-03-15"
   temperature: 0.7
   fallback:
-    provider: "mimo"
-    model: "mimo-v2.5"
+    provider: "zhipu"
+    model: "glm-4.6v-flash"
     temperature: 0.7
 tools:
   - save_real_question
@@ -22,7 +22,7 @@ realtime:
   provider: "dashscope_realtime"
   model: "qwen3.5-omni-flash-realtime"
   voice: "Cindy"  #台湾甜妹
-  vad_mode: "semantic"
+  vad_mode: "none"
   vad_threshold: 0.5
   transcription:
     enabled: true

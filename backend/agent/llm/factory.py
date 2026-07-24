@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from agent.llm.base import BaseLLM
 from agent.llm.providers.dashscope_compat import DashScopeCompatLLM
-from agent.llm.providers.deepseek import DeepSeekLLM
-from agent.llm.providers.mimo import MiMoLLM
+from agent.llm.providers.zhipu import ZhipuLLM
 
 
 class LLMFactory:
@@ -36,18 +35,10 @@ class UnknownProviderError(Exception):
 
 
 # Register built-in text providers
-LLMFactory.register("deepseek", DeepSeekLLM)
 LLMFactory.register("dashscope", DashScopeCompatLLM)
-LLMFactory.register("mimo", MiMoLLM)
+LLMFactory.register("zhipu", ZhipuLLM)
 
 # Register realtime providers
-try:
-    from agent.llm.realtime.openai_realtime import OpenAIRealtimeLLM
-
-    LLMFactory.register("openai_realtime", OpenAIRealtimeLLM)
-except ImportError:
-    pass
-
 try:
     from agent.llm.realtime.dashscope_realtime import DashScopeRealtimeLLM
 

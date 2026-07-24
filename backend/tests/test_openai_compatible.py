@@ -112,6 +112,13 @@ class TestOpenAICompatibleLLM:
         assert isinstance(events[2], Usage) and events[2].total_tokens == 15
         assert isinstance(events[3], Done) and events[3].stop_reason == "end_turn"
 
+    def test_stream_requests_usage(self, llm: OpenAICompatibleLLM) -> None:
+        """Streaming requests must ask providers to include token usage."""
+        params = llm._build_request_params([{"role": "user", "content": "Hi"}], None)
+
+        assert params["stream"] is True
+        assert params["stream_options"] == {"include_usage": True}
+
     @pytest.mark.asyncio
     async def test_single_tool_call(self, llm: OpenAICompatibleLLM) -> None:
         """Test: single tool call in response."""
@@ -271,6 +278,22 @@ class TestOpenAICompatibleLLM:
         error = Exception("Internal Server Error")
         error.status_code = 500
 
+        llm.client.chat.completions.create = AsyncMock(side_effect=error)
+
+        events = []
+        async for event in llm.stream([{"role": "user", "content": "Test"}]):
+            events.append(event)
+
+        assert isinstance(events[0], ProviderError)
+        assert events[0].retryable is True
+
+    @pytest.mark.asyncio
+    async def test_exhausted_free_quota_403_is_retryable(
+        self, llm: OpenAICompatibleLLM
+    ) -> None:
+        """A provider's exhausted free tier must fall through to the configured model."""
+        error = Exception("The free quota has been exhausted")
+        error.status_code = 403
         llm.client.chat.completions.create = AsyncMock(side_effect=error)
 
         events = []

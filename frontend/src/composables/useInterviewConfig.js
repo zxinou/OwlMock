@@ -11,22 +11,20 @@ export function useInterviewConfig() {
   const githubRepos = ref([])
   const reposLoading = ref(false)
   const starting = ref(false)
+  const startError = ref('')
 
   const interviewTypes = [
     { id: 'technical', label: '技术面试', description: '深入技术细节和项目实现' },
     { id: 'behavioral', label: '行为面试', description: '软技能、团队协作、问题解决' },
-    { id: 'comprehensive', label: '综合面试', description: '两者结合' }
+    { id: 'comprehensive', label: '综合面试', description: '技术能力和行为表现结合' },
   ]
 
   const selectedResume = ref(null)
   const selectedType = ref('comprehensive')
   const selectedGithubRepos = ref([])
 
-  const isConfigValid = computed(() => {
-    return selectedResume.value !== null && selectedType.value !== null
-  })
+  const isConfigValid = computed(() => selectedType.value !== null)
 
-  // Load GitHub repos from API
   async function loadGithubRepos() {
     reposLoading.value = true
     try {
@@ -40,7 +38,6 @@ export function useInterviewConfig() {
     }
   }
 
-  // Load resumes from API
   async function loadResumes() {
     resumesLoading.value = true
     try {
@@ -54,7 +51,6 @@ export function useInterviewConfig() {
     }
   }
 
-  // Load on mount
   onMounted(() => {
     loadResumes()
     loadGithubRepos()
@@ -63,6 +59,7 @@ export function useInterviewConfig() {
   async function handleStartInterview() {
     if (!isConfigValid.value || starting.value) return
     starting.value = true
+    startError.value = ''
 
     try {
       const profileId = TYPE_TO_PROFILE[selectedType.value]
@@ -75,7 +72,7 @@ export function useInterviewConfig() {
       router.push(`/interview/${result.session_id}?type=${selectedType.value}`)
     } catch (e) {
       console.error('Failed to create session:', e)
-      alert('创建面试会话失败，请重试')
+      startError.value = e.message || '创建面试会话失败，请重试'
     } finally {
       starting.value = false
     }
@@ -100,6 +97,7 @@ export function useInterviewConfig() {
     selectedType,
     isConfigValid,
     starting,
+    startError,
     handleStartInterview,
     handleGoToUpload,
     handleGoToAnalysis,

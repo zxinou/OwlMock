@@ -1,7 +1,7 @@
 import { reactive, watchEffect } from 'vue'
 
 const state = reactive({
-  primary: '#C4956A',
+  primary: '#2D6B65',
   fontSize: 16,
   radius: 16,
   animations: true,

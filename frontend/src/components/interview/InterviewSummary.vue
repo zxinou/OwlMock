@@ -1,5 +1,5 @@
 <script setup>
-import CapybaraLogo from '@/components/common/CapybaraLogo.vue'
+import OwlLogo from '@/components/common/OwlLogo.vue'
 import { renderMarkdown } from '@/utils/renderMarkdown.js'
 import { INTERVIEW_TYPES } from '@/data/interview.js'
 
@@ -56,8 +56,8 @@ const isBackendFormat = typeof props.summary.overview === 'string'
             :class="msg.role === 'user' ? 'chat-bubble--user' : 'chat-bubble--ai'"
           >
             <div v-if="msg.role === 'ai'" class="bubble-header">
-              <CapybaraLogo :size="14" :stroke-width="2" />
-              <span>Capy</span>
+              <OwlLogo :size="14" :stroke-width="2" />
+              <span>猫头鹰面试官</span>
             </div>
             <template v-if="msg.role === 'ai'">
               <div v-html="renderMarkdown(msg.content)"></div>
@@ -454,22 +454,22 @@ const isBackendFormat = typeof props.summary.overview === 'string'
 }
 
 /* ── Dark mode ── */
-:global(.dark) .summary-chat {
+html.dark .summary-chat {
   background: var(--color-surface);
   border-color: var(--color-border);
 }
-:global(.dark) .summary-chat__header {
+html.dark .summary-chat__header {
   background: var(--color-surface);
 }
-:global(.dark) .chat-bubble--ai {
+html.dark .chat-bubble--ai {
   background: var(--color-base);
   border-color: var(--color-border);
 }
-:global(.dark) .summary-sections {
+html.dark .summary-sections {
   background: var(--color-surface);
   border-color: var(--color-border);
 }
-:global(.dark) .summary-card {
+html.dark .summary-card {
   background: var(--color-base);
   border-color: var(--color-border);
 }

@@ -34,54 +34,38 @@ clone_repo(analysis_id="<id>", url="<repo-url>")
 
 If clone fails, report the error and stop. Do not attempt to guess repository contents.
 
-On success, the result contains `repo_path` for logging only. **All file tools automatically scope to that clone** — use paths **relative to the repository root** from here on (not the `storage/repo/...` prefix).
+On success, the result contains `repo_path`, `repo_url`, `file_count`, and `status="ready"` for logging and context. **All file tools automatically scope to that clone** — use paths **relative to the repository root** from here on (not absolute cache paths).
 
-### Phase 2: Scan Metadata
+### Phase 2: Load Repository Context
 
-Gather high-level project information. This phase gives you the context needed to make smart decisions in Phase 3.
-
-**2a + 2b: Batch these calls together.** `list_directory`, config file, and README have no dependencies — call them all in one turn:
+After `clone_repo` succeeds, call:
 
 ```
-list_directory(path=".", max_depth=5)
-read_file(path="pyproject.toml")   # or package.json, go.mod, etc.
+read_repo_context()
+```
+
+Use the returned Repository Context as the project map. It includes `language`, `frameworks`, `entry_points`, `important_files`, `core_directories`, `project_structure`, and `repository_summary`.
+
+Use `project_structure` directly as `directoryTree` in the final output. Do not call `list_directory` unless `read_repo_context` fails or the index is clearly incomplete.
+
+### Phase 3: Read Key Files From The Index
+
+Read at most **6 files** total. Pick them from `important_files` in this priority order:
+
+1. README
+2. primary config (`package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `pom.xml`)
+3. entry points
+4. Agent / Tool / API modules
+5. models / schemas
+6. one representative test file
+
+Batch reads where possible:
+
+```
 read_file(path="README.md")
-```
-
-The `list_directory` response includes a `directoryTree` field with the structured tree. Use this directly — do NOT recreate the tree yourself.
-
-For the config file, pick the primary one based on language:
-- Python: `pyproject.toml`, `setup.py`, `requirements.txt`
-- Node/JS/TS: `package.json`
-- Go: `go.mod`
-- Rust: `Cargo.toml`
-- Java: `pom.xml`, `build.gradle`
-
-### Phase 3: Read Key Files (LLM-Driven Selection)
-
-This is the most important phase. Based on what you learned in Phase 2, decide which files to read.
-
-**Selection strategy:**
-
-You have seen the directory tree, the config file, and the README. Now think like an architect: "Which files would I need to read to truly understand this project?"
-
-Prioritize in this order:
-1. **Entry points** — the files where execution starts (main.py, main.go, index.ts, app.py, server.py, cmd/main.go, main.rs)
-2. **Core module files** — the main files of the 3-5 most important modules/packages. Look at the directory structure: which folders seem like the core business logic?
-3. **Routing / API definitions** — how are endpoints or commands defined?
-4. **Type definitions / models / schemas** — the data structures that define the domain
-5. **Configuration / middleware / plugins** — how is the app configured and extended?
-6. **Test examples** — 1-2 test files that show testing patterns and conventions
-
-Read **15-25 files** total. Use `read_file` with paths **relative to the repo root** (e.g. `src/main.py`, not `storage/repo/<id>/src/main.py`). Read the full file — do not truncate. If a file is extremely long (>500 lines), read the first 300 lines, which usually contains the key interfaces and patterns.
-
-**Batch reads: 3-5 files per turn.** Select your files first, then call multiple `read_file` in one turn. This reduces steps from ~20 to ~5. Example:
-
-```
+read_file(path="pyproject.toml")
 read_file(path="src/main.py")
-read_file(path="src/routes.py")
-read_file(path="src/models.py")
-read_file(path="src/config.py")
+read_file(path="src/agent.py")
 ```
 
 **Avoid reading:**
@@ -91,7 +75,7 @@ read_file(path="src/config.py")
 - Build output (dist/, build/)
 - Vendored dependencies (vendor/, node_modules/)
 
-**Why this phase matters:** The quality of your analysis depends entirely on which files you choose to read. A poor file selection leads to a shallow, inaccurate report. Take time to reason about the project structure before deciding.
+If important files are missing, use `search_code` once to locate likely entry points or core modules. Keep total tool calls below 10 whenever possible.
 
 ### Phase 4: Analyze and Output
 
@@ -142,7 +126,7 @@ The output has two levels: **overview** and **deep**. Always produce both.
 
 - `techTags`: List 4-8 key technologies. Include language, framework, major libraries, build tools, testing frameworks.
 
-- `directoryTree`: Use the `directoryTree` from the `list_directory` tool response directly. Do NOT recreate it.
+- `directoryTree`: Use `project_structure` from `read_repo_context` directly. Do NOT recreate it and do not call `list_directory` during the normal indexed workflow.
 
 - `highlights`: 3-5 notable strengths of the project. Each item:
   ```json
@@ -234,7 +218,7 @@ The `a` field is a brief answer hint — key points the candidate should cover. 
 
 ## Cleanup
 
-After outputting the JSON, the cloned source is retained in `storage/repo/<id>/` for potential reuse. Do NOT delete it.
+After outputting the JSON, the cloned source is retained in the repository cache for potential reuse. Do NOT delete it.
 
 ---
 
@@ -259,6 +243,6 @@ When encountering an error, still output valid JSON:
 ## Large Repository Protection
 
 If the repository has many files (>5000), proceed with caution:
-- Use a smaller `max_depth` (2 instead of 3) for `list_directory`
-- Be more selective in Phase 3 (read fewer files)
+- Prefer `read_repo_context` over `list_directory`
+- Be more selective in Phase 3 (read fewer files, maximum 6)
 - Warn about the repository size in `suggestions`

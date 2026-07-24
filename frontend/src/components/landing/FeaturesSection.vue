@@ -6,27 +6,27 @@ const router = useRouter()
 const features = [
   {
     title: 'GitHub 源码分析',
-    desc: '粘贴你的 GitHub 仓库链接，Capy 会深入分析代码结构、技术栈和项目亮点，自动生成针对性的面试问题和回答话术。',
+    desc: '粘贴你的 GitHub 仓库链接，猫头鹰助手会深入分析代码结构、技术栈和项目亮点，自动生成针对性的面试问题和回答话术。',
     tag: '支持主流语言和框架',
     route: '/analysis/github',
-    iconWrapBg: 'linear-gradient(135deg, #f0e6dc, #e8ddd1)',
-    iconStroke: '#C4956A',
+    iconWrapBg: 'linear-gradient(135deg, #dcece8, #c9dfd9)',
+    iconStroke: '#2D6B65',
   },
   {
     title: 'JD 智能分析',
-    desc: '粘贴职位描述，Capy 会拆解岗位核心要求、隐含期望和匹配度评估，帮你判断是否值得投递，以及如何针对性准备。',
+    desc: '粘贴职位描述，猫头鹰助手会拆解岗位核心要求、隐含期望和匹配度评估，帮你判断是否值得投递，以及如何针对性准备。',
     tag: '关键词匹配 + 评估报告',
     route: '/analysis/jd',
-    iconWrapBg: 'linear-gradient(135deg, #dde5da, #d0dbca)',
-    iconStroke: '#A8B5A0',
+    iconWrapBg: 'linear-gradient(135deg, #f7edcb, #eedb9a)',
+    iconStroke: '#B7831D',
   },
   {
     title: '简历匹配分析',
-    desc: '上传简历并指定目标岗位，Capy 会评估你的经历与岗位的相关性，指出亮点和不足，并给出具体的修改建议。',
+    desc: '上传简历并指定目标岗位，猫头鹰助手会评估你的经历与岗位的相关性，指出亮点和不足，并给出具体的修改建议。',
     tag: 'PDF / Word 格式支持',
     route: '/analysis/resume',
-    iconWrapBg: 'linear-gradient(135deg, #fce4dc, #f5d8cc)',
-    iconStroke: '#E8937A',
+    iconWrapBg: 'linear-gradient(135deg, #f7ddd6, #efc7bb)',
+    iconStroke: '#D86C57',
   },
 ]
 </script>
@@ -45,7 +45,7 @@ const features = [
         </div>
         <h2 class="text-3xl lg:text-5xl font-bold mb-4" style="font-family: var(--font-heading)">三个维度，全面准备</h2>
         <p class="text-lg mx-auto" style="color: var(--color-ink-light); max-width: 560px; line-height: var(--leading-relaxed)">
-          从技术能力到岗位匹配，再到简历优化，每个环节都有 Capy 帮你梳理
+          从技术能力到岗位匹配，再到简历优化，每个环节都有猫头鹰助手帮你梳理
         </p>
       </div>
 
@@ -97,13 +97,14 @@ const features = [
             {{ f.tag }}
           </span>
 
-          <!-- Deco capybara -->
+          <!-- Deco owl -->
           <svg v-if="i === 0" class="absolute bottom-2.5 right-2.5 opacity-[0.06] hover:opacity-[0.12] transition-opacity" width="120" height="120" viewBox="0 0 140 120" fill="none">
-            <path d="M55 75 C30 75, 15 58, 20 42 C23 32, 35 22, 55 18 C72 14, 90 18, 100 30 C110 42, 108 65, 90 75 C78 82, 68 80, 55 75 Z" stroke="#C4956A" stroke-width="2" stroke-linecap="round" fill="none"/>
-            <circle cx="50" cy="42" r="2" fill="#C4956A"/>
-            <circle cx="68" cy="38" r="2" fill="#C4956A"/>
-            <path d="M58 50 L58 56" stroke="#C4956A" stroke-width="1.5" stroke-linecap="round"/>
-            <path d="M52 56 Q58 62 64 56" stroke="#C4956A" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+            <path d="M35 42 23 21l28 11c10-7 21-10 34-10 13 0 25 4 35 11l28-12-13 22c8 12 12 27 12 44 0 29-21 49-52 49S43 116 43 87c0-18 4-33 12-45Z" stroke="var(--color-primary)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="73" cy="66" r="14" stroke="var(--color-primary)" stroke-width="3"/>
+            <circle cx="111" cy="66" r="14" stroke="var(--color-primary)" stroke-width="3"/>
+            <circle cx="73" cy="67" r="3" fill="var(--color-primary)"/>
+            <circle cx="111" cy="67" r="3" fill="var(--color-primary)"/>
+            <path d="m92 74-7 8 7 5 7-5-7-8Z" stroke="var(--color-primary)" stroke-width="2"/>
           </svg>
         </div>
       </div>

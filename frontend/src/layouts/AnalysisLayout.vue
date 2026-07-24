@@ -1,13 +1,18 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import CapybaraLogo from '@/components/common/CapybaraLogo.vue'
+import OwlLogo from '@/components/common/OwlLogo.vue'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
 import { useScrollState } from '@/composables/useScrollState.js'
 
 const route = useRoute()
 const { scrolled } = useScrollState()
 const sidebarOpen = ref(false)
+const contentMaxWidth = computed(() => {
+  const widths = { narrow: '760px', wide: '1200px', default: '960px' }
+  if (route.name === 'github-overview') return widths.wide
+  return widths[route.meta.contentWidth] || widths.default
+})
 
 const links = [
   { to: '/analysis/github', label: 'GitHub 源码分析', icon: 'github' },
@@ -48,9 +53,9 @@ const bottomLinks = [
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </router-link>
           <div class="flex items-center gap-2">
-            <CapybaraLogo :size="24" />
+            <OwlLogo :size="24" />
             <span class="font-semibold text-sm">
-              {{ route.meta.title?.replace(' — CapyMock', '') || '分析' }}
+              {{ route.meta.title?.replace(' — OwlMock', '') || '分析' }}
             </span>
           </div>
         </div>
@@ -130,7 +135,7 @@ const bottomLinks = [
 
     <!-- Main content -->
     <main class="lg:ml-[280px] py-8" :style="{ paddingTop: 'calc(var(--nav-height) + 2rem)' }">
-      <div class="mx-auto px-6 lg:px-10" style="max-width: 960px">
+      <div class="mx-auto px-6 lg:px-10" :style="{ maxWidth: contentMaxWidth }">
         <slot />
       </div>
     </main>

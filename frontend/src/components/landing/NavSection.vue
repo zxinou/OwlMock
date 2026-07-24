@@ -1,5 +1,5 @@
 <script setup>
-import CapybaraLogo from '@/components/common/CapybaraLogo.vue'
+import OwlLogo from '@/components/common/OwlLogo.vue'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
 import { useScrollState } from '@/composables/useScrollState.js'
 
@@ -10,13 +10,13 @@ const { scrolled } = useScrollState()
   <nav
     class="nav-glass fixed top-0 left-0 right-0 z-[100] flex items-center transition-shadow"
     :class="scrolled ? 'shadow-sm' : ''"
-    :style="{ height: 'var(--nav-height)', background: 'rgba(255,252,247,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid var(--color-border-light)' }"
+    :style="{ height: 'var(--nav-height)', background: 'rgba(247,250,247,0.88)', backdropFilter: 'blur(16px)', borderBottom: '1px solid var(--color-border-light)' }"
   >
     <div class="w-full flex items-center justify-between mx-auto px-6" style="max-width: var(--max-width)">
       <!-- Logo -->
       <router-link to="/" class="flex items-center gap-3 text-xl font-bold" style="font-family: var(--font-heading); color: var(--color-ink);">
-        <CapybaraLogo :size="36" />
-        CapyMock
+        <OwlLogo :size="36" />
+        OwlMock
       </router-link>
 
       <!-- Nav links -->

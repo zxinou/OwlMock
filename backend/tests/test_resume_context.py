@@ -114,7 +114,7 @@ class TestContextBuilderInjection:
         profile.prompt_template = str(memory_root / "nonexistent_prompt.md")
         profile.skills = []
         profile.llm = MagicMock()
-        profile.llm.provider = "deepseek"
+        profile.llm.provider = "dashscope"
         profile.llm.model = "test"
 
         builder._memory_root = str(memory_root)

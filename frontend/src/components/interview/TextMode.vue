@@ -1,7 +1,7 @@
 <script setup>
 import { ref, nextTick, onMounted, watch } from 'vue'
 import { api } from '@/api/index.js'
-import CapybaraLogo from '@/components/common/CapybaraLogo.vue'
+import OwlLogo from '@/components/common/OwlLogo.vue'
 import { renderMarkdown } from '@/utils/renderMarkdown.js'
 import { eventsToMessages } from '@/utils/interviewHelpers.js'
 
@@ -46,7 +46,7 @@ async function loadHistory() {
     historyLoading.value = false
     if (messages.value.length > 0) {
       await nextTick()
-      scrollToTop()
+      scrollToBottom()
     }
   }
 }
@@ -250,7 +250,7 @@ onMounted(async () => {
 
       <h2 class="chat-welcome__title" style="font-family: var(--font-heading)">准备好了吗？</h2>
       <p class="chat-welcome__desc">
-        Capy会根据你的简历和目标岗位进行个性化提问。<br>
+        猫头鹰面试官会根据你的简历和目标岗位进行个性化提问。<br>
         选择下方的面试类型开始吧。
       </p>
 
@@ -298,8 +298,8 @@ onMounted(async () => {
           :class="msg.role === 'user' ? 'chat-bubble--user' : 'chat-bubble--ai'"
         >
           <div v-if="msg.role === 'ai'" class="bubble-header">
-            <CapybaraLogo :size="16" :stroke-width="2" />
-            Capy
+            <OwlLogo :size="16" :stroke-width="2" />
+            猫头鹰面试官
           </div>
           <template v-if="msg.role === 'ai'">
             <div v-html="msg.html || renderMarkdown(msg.content)"></div>
@@ -612,22 +612,22 @@ onMounted(async () => {
   opacity: 0.6;
 }
 
-:global(.dark) .welcome-option {
+html.dark .welcome-option {
   background: var(--color-surface);
   border-color: var(--color-border);
 }
 
-:global(.dark) .chat-bubble--ai {
+html.dark .chat-bubble--ai {
   background: var(--color-surface);
   border-color: var(--color-border);
 }
 
-:global(.dark) .typing-indicator {
+html.dark .typing-indicator {
   background: var(--color-surface);
   border-color: var(--color-border);
 }
 
-:global(.dark) .chat-input-wrap {
+html.dark .chat-input-wrap {
   background: var(--color-surface);
 }
 

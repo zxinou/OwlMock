@@ -9,7 +9,14 @@ const error = ref(null)
 const phase = ref('idle')
 const progress = ref(0)
 const progressMessage = ref('')
-const activeTaskId = ref(null)
+const ACTIVE_TASK_KEY = 'owlmock.github.activeTaskId'
+
+function loadActiveTaskId() {
+  if (typeof window === 'undefined') return null
+  return window.localStorage.getItem(ACTIVE_TASK_KEY)
+}
+
+const activeTaskId = ref(loadActiveTaskId())
 
 let eventSource = null
 
@@ -20,11 +27,21 @@ function closeSSE() {
   }
 }
 
+function setActiveTaskId(taskId) {
+  activeTaskId.value = taskId || null
+  if (typeof window === 'undefined') return
+  if (taskId) {
+    window.localStorage.setItem(ACTIVE_TASK_KEY, taskId)
+  } else {
+    window.localStorage.removeItem(ACTIVE_TASK_KEY)
+  }
+}
+
 function resetProgress() {
   phase.value = 'idle'
   progress.value = 0
   progressMessage.value = ''
-  activeTaskId.value = null
+  setActiveTaskId(null)
 }
 
 function connectSSE(taskId) {
@@ -42,7 +59,7 @@ function connectSSE(taskId) {
           progressMessage.value = data.message
         }
 
-        if (data.status === 'completed') {
+        if (data.status === 'completed' || data.status === 'done') {
           closeSSE()
           resolve(data)
         } else if (data.status === 'failed') {
@@ -54,9 +71,32 @@ function connectSSE(taskId) {
       }
     }
 
-    es.onerror = () => {
+    es.onerror = async () => {
       closeSSE()
-      reject(new Error('SSE 连接中断'))
+      try {
+        const task = await api.getTaskStatus(taskId)
+        if (task.progress != null) progress.value = task.progress
+        if (task.message) progressMessage.value = task.message
+        if (task.status === 'completed' || task.status === 'done') {
+          resolve(task)
+          return
+        }
+        if (task.status === 'failed') {
+          reject(new Error(task.error || task.message || '分析失败'))
+          return
+        }
+        const analysis = await api.getGithubRepo(taskId)
+        if (analysis?.url && ['pending', 'running'].includes(analysis.status)) {
+          await api.analyzeGithub(analysis.url)
+        }
+        setTimeout(() => {
+          connectSSE(taskId).then(resolve).catch(reject)
+        }, 1500)
+      } catch {
+        setTimeout(() => {
+          connectSSE(taskId).then(resolve).catch(reject)
+        }, 2500)
+      }
     }
   })
 }
@@ -82,12 +122,23 @@ export function useGithubAnalysis() {
 
   function fetchRepo(id) {
     return withLoading(async () => {
+      if (currentRepo.value?.id !== id) currentRepo.value = null
       currentRepo.value = await api.getGithubRepo(id)
     })
   }
 
   function fetchDeepAnalysis(id) {
     return fetchRepo(id)
+  }
+
+  function deleteRepo(id) {
+    return withLoading(async () => {
+      await api.deleteGithubRepo(id)
+      repos.value = repos.value.filter((repo) => repo.id !== id)
+      if (currentRepo.value?.id === id) {
+        currentRepo.value = null
+      }
+    })
   }
 
   async function analyzeNewRepo(url) {
@@ -109,7 +160,7 @@ export function useGithubAnalysis() {
     }
 
     const taskId = result.id || result.task_id
-    activeTaskId.value = taskId
+    setActiveTaskId(taskId)
 
     // Cached result — already done
     if (result.status === 'done') {
@@ -146,13 +197,13 @@ export function useGithubAnalysis() {
           phase.value = 'error'
           error.value = e.message
         } finally {
-          activeTaskId.value = null
+          setActiveTaskId(null)
         }
       })
       .catch((e) => {
         phase.value = 'error'
         error.value = e.message
-        activeTaskId.value = null
+        setActiveTaskId(null)
       })
 
     // Return immediately so caller can navigate
@@ -161,21 +212,21 @@ export function useGithubAnalysis() {
 
   async function reconnectTask(taskId) {
     if (!taskId) return false
-    activeTaskId.value = taskId
+    setActiveTaskId(taskId)
 
     try {
       const task = await api.getTaskStatus(taskId)
-      if (task.status === 'completed') {
+      if (task.status === 'completed' || task.status === 'done') {
         phase.value = 'fetching'
         currentRepo.value = await api.getGithubRepo(taskId)
         phase.value = 'done'
-        activeTaskId.value = null
+        setActiveTaskId(null)
         return true
       }
       if (task.status === 'failed') {
         phase.value = 'error'
         error.value = task.error || '分析失败'
-        activeTaskId.value = null
+        setActiveTaskId(null)
         return false
       }
 
@@ -195,18 +246,18 @@ export function useGithubAnalysis() {
             phase.value = 'error'
             error.value = e.message
           } finally {
-            activeTaskId.value = null
+            setActiveTaskId(null)
           }
         })
         .catch((e) => {
           phase.value = 'error'
           error.value = e.message
-          activeTaskId.value = null
+          setActiveTaskId(null)
         })
 
       return true
     } catch {
-      activeTaskId.value = null
+      setActiveTaskId(null)
       return false
     }
   }
@@ -223,6 +274,7 @@ export function useGithubAnalysis() {
     fetchRepos,
     fetchRepo,
     fetchDeepAnalysis,
+    deleteRepo,
     analyzeNewRepo,
     reconnectTask,
     closeSSE,

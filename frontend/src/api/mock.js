@@ -599,11 +599,16 @@ pub enum Commands {
 
 // ─── localStorage Bridge ─────────────────────────────────────────────────
 
-const STORAGE_KEY = 'capy-github-repos'
+const STORAGE_KEY = 'owlmock-github-repos'
+const LEGACY_STORAGE_KEY = 'capy-github-repos'
 
 function getStoredIds() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    const current = localStorage.getItem(STORAGE_KEY)
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+    const ids = JSON.parse(current || legacy || '[]')
+    if (!current && legacy) localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
+    return ids
   } catch {
     return []
   }
@@ -705,4 +710,3 @@ export function mockAdapter(path, options = {}) {
 
   return {}
 }
-

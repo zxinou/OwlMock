@@ -36,6 +36,9 @@ class TaskResult:
     """Final result of a task."""
     task_id: str
     status: TaskStatus
+    progress: float = 0.0
+    message: str = ""
+    stage: str = "waiting"
     result: Any = None
     error: str | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
@@ -83,6 +86,14 @@ class TaskService:
             message=message,
             data=data or {},
         )
+        task = self._tasks.get(task_id)
+        if task is not None:
+            task.status = TaskStatus.RUNNING
+            task.progress = progress
+            task.message = message
+            stage = update.data.get("stage")
+            if isinstance(stage, str) and stage:
+                task.stage = stage
         await self._progress_queues[task_id].put(update)
 
     async def complete_task(self, task_id: str, result: Any) -> None:
@@ -91,6 +102,9 @@ class TaskService:
             return
 
         self._tasks[task_id].status = TaskStatus.COMPLETED
+        self._tasks[task_id].progress = 1.0
+        self._tasks[task_id].message = "Task completed"
+        self._tasks[task_id].stage = "completed"
         self._tasks[task_id].result = result
         self._tasks[task_id].completed_at = datetime.utcnow()
 
@@ -108,6 +122,9 @@ class TaskService:
             return
 
         self._tasks[task_id].status = TaskStatus.FAILED
+        self._tasks[task_id].progress = 0.0
+        self._tasks[task_id].message = error
+        self._tasks[task_id].stage = "failed"
         self._tasks[task_id].error = error
         self._tasks[task_id].completed_at = datetime.utcnow()
 
@@ -126,6 +143,9 @@ class TaskService:
 
         self._cancel_tokens[task_id].set()
         self._tasks[task_id].status = TaskStatus.CANCELLED
+        self._tasks[task_id].progress = 0.0
+        self._tasks[task_id].message = "Task cancelled"
+        self._tasks[task_id].stage = "cancelled"
         self._tasks[task_id].completed_at = datetime.utcnow()
 
         # Send cancellation progress update
@@ -160,7 +180,9 @@ class TaskService:
                 # Send keepalive
                 yield TaskProgress(
                     status=TaskStatus.RUNNING,
+                    progress=self._tasks.get(task_id, TaskResult(task_id, TaskStatus.RUNNING)).progress,
                     message="keepalive",
+                    data={"stage": self._tasks.get(task_id).stage} if self._tasks.get(task_id) else {},
                 )
             except Exception as e:
                 logger.error(f"Progress stream error: {e}")

@@ -1,91 +1,161 @@
-# CapyMock
+# OwlMock
 
-![CapyMock 首页](homepage.png)
+<p align="center">
+  <strong>把岗位理解、项目复盘、简历匹配和模拟面试连成一条 AI 求职准备链路。</strong>
+</p>
 
-## 简介
+![OwlMock 首页](homepage.png)
 
-CapyMock 是一间面试前的练习室 —— 温暖、包容、不带评判。不同于冷冰冰的企业 HR 平台和令人焦虑的刷题网站，CapyMock 让你按自己的节奏练习，获得真诚的反馈，逐步建立信心。
+OwlMock 是一个面向求职准备的 AI 分析与模拟面试平台。它可以分析岗位 JD 和 GitHub 仓库，将一份简历与多个目标岗位进行匹配，并基于这些上下文开展文字或语音模拟面试。
 
-线条水豚吉祥物体现了产品气质：沉稳、亲切、不急不躁。
+产品形象是一只拟人化猫头鹰面试官。界面使用黑白线稿、青绿色主色和少量金色提示，支持浅色与深色模式。
 
-### 功能
+## 功能
 
-- **模拟面试** — 支持文字和语音两种模式的 AI 模拟面试，覆盖技术、行为、综合三类面试官，并且支持一键在两个模式间无缝切换
-- **GitHub 仓库分析** — 克隆仓库、扫描代码结构、生成项目分析报告，为技术面试做准备
-- **岗位描述分析** — 粘贴 JD 文本，获得结构化的岗位要求分析
-- **简历管理** — 上传 PDF/图片简历，AI 多模态分析并给出改进建议
-- **面试总结** — 面试结束后自动生成总结报告，含亮点、建议和技术/行为评估
-- **记忆系统** — 跨会话的分层记忆（用户画像、简历笔记、真实面试题），让面试官越练越懂你
+- **JD 智能分析**：支持粘贴文字或上传 PNG/JPEG 岗位截图，输出硬性要求、优先条件、技能权重、隐含期待、风险点和面试重点。
+- **简历匹配分析**：管理 PDF、PNG、JPG 简历，选择一个或多个已分析岗位，异步生成匹配报告和岗位横向对比。
+- **GitHub 源码分析**：接收标准 GitHub 仓库地址，通过浅克隆、归档或 API snapshot 获取代码，生成 Repository Index、项目概览、深度报告和项目追问题。
+- **模拟面试**：覆盖技术、行为和综合面试；文字模式使用 SSE 流式回复，语音模式采用“开始回答 -> 回答完毕 -> 下一题”的手动分轮交互。
+- **历史记录管理**：GitHub、JD、简历匹配和模拟面试均支持历史查看与删除；JD 和匹配报告支持批量删除。
+- **任务恢复与缓存**：长任务在后台运行，页面切换后可以恢复进度；仓库缓存和索引减少重复下载与无意义工具调用。
+- **Langfuse 可观测性**：记录 Agent、工具和模型调用的耗时、输入输出、错误与 token 使用情况。
+- **按场景路由模型**：优先使用 DashScope Qwen，遇到可重试错误时按 profile 切换到智谱 GLM。
+
+## 界面预览
+
+### 文字与语音面试
+
+![文字面试](text_mode_interview.png)
+
+<p align="center">
+  <img src="voice-mode-interview.png" alt="语音面试" width="560">
+</p>
+
+### GitHub 仓库分析
+
+![GitHub 仓库概览](github_repo_analysis_1.png)
+
+<details>
+<summary>查看 GitHub 深度分析长图</summary>
+
+![GitHub 深度分析](github_repo_analysis_2.png)
+
+</details>
+
+### JD 分析
+
+<details>
+<summary>查看 JD 分析报告长图</summary>
+
+![JD 分析报告](JD_analysis.png)
+
+</details>
+
+### Langfuse Trace
+
+<p align="center">
+  <img src="langfuse_tracer.png" alt="Langfuse Agent Trace" width="520">
+</p>
 
 ## 技术栈
 
 | 层级 | 技术 |
-|------|------|
-| **前端** | Vue 3 + Vite + Tailwind CSS |
-| **后端** | FastAPI + 自研 ReAct Agent Loop + Realtime Voice Agent |
-| **数据库** | SQLite (aiosqlite) + SQLAlchemy 2.0 + JSONL 事件日志 |
-| **LLM** | MiMo / DashScope / DeepSeek（文本）；DashScope Qwen-Omni / OpenAI Realtime（语音） |
-| **可观测性** | Langfuse（OpenTelemetry SDK v4） |
-| **设计系统** | 大地色系（蜂蜜橡木、苔藓绿、珊瑚沙）+ Plus Jakarta Sans / Outfit |
+| --- | --- |
+| 前端 | Vue 3、Vite 6、Vue Router、Tailwind CSS、Lucide Icons |
+| 后端 | Python 3.13、FastAPI、SQLAlchemy 2.0、aiosqlite |
+| Agent | ReAct Agent Loop、Realtime Voice Agent、YAML Agent Profile、Tool System |
+| 模型 | DashScope Qwen、Zhipu GLM、OpenAI-compatible 适配层 |
+| 实时语音 | DashScope Qwen-Omni Realtime、WebSocket、PCM16 |
+| 数据 | SQLite、JSONL 会话事件、Markdown 记忆、Repository Cache |
+| 可观测性 | Langfuse、OpenTelemetry |
 
-### Agent 架构
+## 工作流程
 
-仿照 Claude Code 的 ReAct 循环设计：
+### GitHub 分析
 
-- **ReActAgent** — Reason → Act → Observe 循环，支持迭代推理、工具调用、上下文压缩
-- **RealtimeAgent** — 双泵架构，桥接客户端 WebSocket 与实时语音 LLM，支持打断、中注入摘要、不活跃检测
-- **AgentProfile** — YAML 配置驱动，定义 LLM、工具、提示词、策略、语音参数
-- **MemoryStore** — 分层 Markdown 记忆（用户画像 / 简历笔记 / 真实面试题），跨会话持久化
-- **状态机** - 7 个状态通过有限状态机严格管控转换（IDLE → THINKING → STREAMING_TEXT → EXECUTING_TOOLS → AGGREGATING），任意状态可被中断至 INTERRUPTED；语音模式另设 LISTENING / AI_SPEAKING / THINKING / CLOSED 四态。
-- **其他** - 上下文管理、容错与降级策略等
-
-## 核心架构
-
-### 文字面试（SSE 流式）
-
-```
-前端 TextMode → POST /api/sessions/{id}/messages
-             → ReActAgent.run()
-             → LLM 流式输出 + 工具调用
-             → SSE 事件推送到前端
+```text
+GitHub URL
+  -> Repository Loader (shallow clone / archive / snapshot)
+  -> repo_cache workspace
+  -> Repository Index + Repository Context
+  -> Repo Analyzer Agent
+  -> Overview / Deep Report / Interview Questions
+  -> SQLite + Task progress / SSE
 ```
 
-![文字面试模式](text_mode_interview.png)
+同一仓库会复用缓存和 `repo_index.json`。仓库工作区位于后端源码目录之外，避免 `uvicorn --reload` 因下载代码而重启。
 
-### 语音面试（WebSocket 实时）
+### JD 与简历匹配
 
+```text
+Text or JD Image -> asynchronous JD analysis -> structured JD report
+Resume PDF/Image + one or more analyzed JDs
+  -> multimodal resume parsing
+  -> independent match tasks
+  -> score comparison + detailed reports
 ```
-前端 VoiceMode → WebSocket /ws/voice/{session_id}
-              → RealtimeAgent（双泵架构）
-              → 客户端音频 ↔ 实时 LLM（DashScope Qwen-Omni / OpenAI）
-              → 支持 VAD、打断（barge-in）、实时转写
+
+### 模拟面试
+
+```text
+Text:  message -> ReAct Agent -> SSE events
+Voice: interviewer question -> start answer -> audio chunks
+       -> finish answer / commit -> realtime model -> next question
 ```
 
-![语音面试模式](voice-mode-interview.png)
+语音模式不依赖自动静音判断来结束回答，用户点击“回答完毕”后才会进入下一题。
 
-### GitHub 仓库分析
+## 模型路由
 
-![GitHub 仓库分析](github_repo_analysis_1.png)
-![GitHub 仓库分析详情](github_repo_analysis_2.png)
+默认值由 `backend/config/agents/*.yaml` 管理，也可以通过环境变量按 profile 覆盖。
 
-### 岗位描述分析
+| 场景 | 主模型 | 备用模型 |
+| --- | --- | --- |
+| 简历分析 | `dashscope/qwen3.5-omni-plus` | `zhipu/glm-4.6v-flash` |
+| 简历与岗位匹配 | `dashscope/qwen3.5-omni-plus` | `zhipu/glm-4.6v-flash` |
+| JD 分析 | `dashscope/qwen3.5-omni-plus-2026-03-15` | `zhipu/glm-4.6v-flash` |
+| GitHub 分析 | `dashscope/qwen3.5-omni-plus-2026-03-15` | `zhipu/glm-4.6v-flash` |
+| 模拟面试 / 总结 | `dashscope/qwen3.5-omni-plus-2026-03-15` | `zhipu/glm-4.6v-flash` |
+| 实时语音 | `dashscope_realtime/qwen3.5-omni-flash-realtime` | 无 |
 
-![JD 分析](JD_analysis.png)
+只有限流、超时和服务端 5xx 等可重试错误会触发 fallback。参数或模型名称错误会直接返回，避免重复消耗额度。
 
 ## 快速开始
 
-### 后端
+### 环境要求
+
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 18+
+- DashScope API Key
+- Zhipu API Key（可选 fallback）
+
+### 启动后端
 
 ```bash
 cd backend
 uv sync
-cp .env.example .env   # 填入 LLM API Key
-uv run uvicorn api.app:app --reload
+cp .env.example .env
+uv run uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-API 默认运行在 `http://localhost:8000`。
+Windows PowerShell 可使用 `Copy-Item .env.example .env`。在 `backend/.env` 中至少配置：
 
-### 前端
+```dotenv
+DASHSCOPE_API_KEY=your-dashscope-key
+ZHIPU_API_KEY=your-zhipu-key
+```
+
+后端默认运行在 `http://localhost:8000`。
+
+也可以使用后端目录中的 Docker 配置：
+
+```bash
+cd backend
+docker compose up --build backend
+```
+
+### 启动前端
 
 ```bash
 cd frontend
@@ -93,56 +163,54 @@ npm install
 npm run dev
 ```
 
-开发服务器默认运行在 `http://localhost:3000`。
+前端默认运行在 `http://localhost:3000`，开发服务器会将 `/api` 和 `/ws` 代理到后端。
 
-### Langfuse 追踪（可选）
+### 启用 Langfuse
 
-```bash
-# 在 .env 中设置 TRACER=langfuse 并配置 Langfuse 密钥
-# 或使用 Docker Compose 启动 Langfuse 服务
-docker compose --profile langfuse up -d
+```dotenv
+TRACER=langfuse
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
+LANGFUSE_TRACING_ENVIRONMENT=development
 ```
-
-![Langfuse 追踪](langfuse_tracer.png)
 
 ## 项目结构
 
-```
-job-seeker-assistant/
-├── frontend/               # Vue 3 前端
+```text
+OwlMock/
+├── frontend/
+│   ├── public/                 # favicon 等静态资源
 │   └── src/
-│       ├── pages/              # 页面（首页、面试、分析、简历）
-│       ├── components/         # 可复用组件（面试、GitHub、通用）
-│       ├── composables/        # 组合式函数（语音、配置、分析）
-│       ├── utils/              # 工具函数（音频、Markdown、事件转换）
-│       ├── stores/             # Pinia 状态管理
-│       ├── layouts/            # 页面布局
-│       ├── router/             # 路由配置
-│       ├── data/               # 静态数据（面试类型、示例问题）
-│       └── api/                # 接口层
-├── backend/                # FastAPI 后端
-│   ├── agent/                  # Agent 核心
-│   │   ├── loop.py                 # ReActAgent（文字模式）
-│   │   ├── realtime_agent.py       # RealtimeAgent（语音模式）
-│   │   ├── factory.py              # AgentFactory
-│   │   ├── context/                # 上下文构建与压缩
-│   │   └── llm/                    # LLM 抽象与 provider
-│   │       ├── providers/              # 文本 LLM（MiMo、DeepSeek、DashScope）
-│   │       └── realtime/               # 实时语音 LLM（OpenAI、DashScope）
-│   ├── api/                    # FastAPI 路由（REST / SSE / WebSocket）
-│   ├── config/                 # 配置与 Agent Profile YAML
-│   ├── tool/                   # 工具系统（9 个内建工具）
-│   ├── service/                # 业务逻辑（会话、简历、任务）
-│   ├── storage/                # 数据存储（SQLite、JSONL、Markdown 记忆）
-│   ├── trace/                  # Langfuse 可观测性集成
-│   ├── data/                   # 系统提示词与技能定义
-│   └── tests/                  # 测试
-├── DESIGN.md               # 设计系统规范
-├── PRODUCT.md              # 产品定位和用户画像
-├── CLAUDE.md               # Claude Code 项目指令
-└── README.md               # 本文件
+│       ├── pages/              # 首页、分析报告、任务状态、模拟面试
+│       ├── components/         # common、github、jd、resume、interview
+│       ├── composables/        # 异步任务、语音和分析状态逻辑
+│       ├── layouts/            # 分析模块布局
+│       ├── router/             # Vue Router
+│       └── api/                # REST / SSE / WebSocket 客户端
+├── backend/
+│   ├── agent/                  # ReAct / Realtime Agent 与模型路由
+│   ├── api/                    # REST、SSE、WebSocket 路由
+│   ├── config/agents/          # 场景化 Agent Profile
+│   ├── data/                   # Prompt 与 Repo Analyzer Skill
+│   ├── service/                # Task、Index、JD/Resume 报告服务
+│   ├── storage/                # SQLite、JSONL、Markdown Memory
+│   ├── tool/                   # 内建工具与 ToolContext
+│   ├── trace/                  # Langfuse 可观测性
+│   └── tests/                  # pytest 测试
+├── repo_cache/                 # 运行时仓库缓存，不提交
+├── analysis_cache/             # 运行时上传缓存，不提交
+└── README.md
 ```
+
+## 数据与安全
+
+- 不要提交 `backend/.env`，只提交无密钥的 `.env.example`。
+- 简历、JD 截图、仓库缓存、SQLite、会话日志和本地测试输出均已加入 `.gitignore`。
+- 当前默认用户为本地开发用的 `default`，项目尚未包含生产级登录、权限隔离或多租户鉴权。
+- 公开部署前应增加认证、上传限额、请求限流、CORS 白名单和持久化对象存储。
+- 源码中的 `CAPYMOCK_` 环境变量前缀和 `capy_note` 字段是为旧数据保留的兼容标识，不是当前产品名称。
 
 ## License
 
-MIT
+[MIT](LICENSE)

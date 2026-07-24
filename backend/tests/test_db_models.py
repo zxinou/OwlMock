@@ -5,10 +5,16 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from storage.db.models import Base, RepoAnalysis, Resume, Session
+from storage.db.models import (
+    Base,
+    JdAnalysisRecord,
+    RepoAnalysis,
+    Resume,
+    Session,
+)
 
 
 @pytest.fixture
@@ -48,6 +54,8 @@ class TestRepoAnalysis:
         assert row.owner == "owner"
         assert row.repo == "repo"
         assert row.status == "pending"
+        assert row.stage == "waiting"
+        assert row.progress == 0.0
         assert row.result_json is None
         assert row.error is None
 
@@ -159,6 +167,90 @@ class TestResume:
         assert row.updated_at is not None
 
 
+class TestJdAnalysisRecord:
+    """Test JD analysis history model CRUD."""
+
+    async def test_create_jd_analysis_record(self, db: AsyncSession) -> None:
+        """Create a JD analysis history row."""
+        record = JdAnalysisRecord(
+            id="jd-1",
+            user_id="user-1",
+            text="Frontend engineer JD",
+            result_json='{"requirements":[]}',
+        )
+        db.add(record)
+        await db.commit()
+
+        result = await db.execute(
+            select(JdAnalysisRecord).where(JdAnalysisRecord.id == "jd-1")
+        )
+        row = result.scalar_one()
+        assert row.user_id == "user-1"
+        assert row.text == "Frontend engineer JD"
+        assert row.created_at is not None
+
+    async def test_new_jd_analysis_record_has_task_defaults(
+        self, db: AsyncSession
+    ) -> None:
+        record = JdAnalysisRecord(
+            id="jd-pending",
+            user_id="user-1",
+            text="Backend engineer JD",
+            result_json="{}",
+        )
+        db.add(record)
+        await db.commit()
+
+        result = await db.execute(
+            select(JdAnalysisRecord).where(JdAnalysisRecord.id == "jd-pending")
+        )
+        row = result.scalar_one()
+        assert row.status == "pending"
+        assert row.stage == "waiting"
+        assert row.progress == 0.0
+        assert row.source_type == "text"
+        assert row.source_path is None
+        assert row.error is None
+        assert row.updated_at is not None
+
+    async def test_old_jd_table_migration_marks_existing_rows_completed(self) -> None:
+        from storage.db.engine import _ensure_jd_analysis_columns
+
+        engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "CREATE TABLE jd_analyses ("
+                    "id VARCHAR PRIMARY KEY, user_id VARCHAR NOT NULL, "
+                    "text TEXT NOT NULL, result_json TEXT NOT NULL, created_at DATETIME)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO jd_analyses "
+                    "(id, user_id, text, result_json) VALUES "
+                    "('legacy', 'user-1', 'Legacy JD', '{\"requirements\": []}')"
+                )
+            )
+            await conn.run_sync(_ensure_jd_analysis_columns)
+
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT status, stage, progress, source_type, result_json "
+                        "FROM jd_analyses WHERE id = 'legacy'"
+                    )
+                )
+            ).mappings().one()
+
+        await engine.dispose()
+        assert row["status"] == "completed"
+        assert row["stage"] == "completed"
+        assert row["progress"] == 1.0
+        assert row["source_type"] == "text"
+        assert row["result_json"] == '{"requirements": []}'
+
+
 class TestSessionResumeId:
     """Test Session.resume_id field."""
 
@@ -196,7 +288,7 @@ class TestInitDb:
     """Test that init_db creates all tables including new ones."""
 
     async def test_init_db_creates_all_tables(self) -> None:
-        """init_db creates repo_analyses, resumes, and sessions tables."""
+        """init_db creates all app tables."""
         engine = create_async_engine("sqlite+aiosqlite://", echo=False)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -207,7 +299,30 @@ class TestInitDb:
             )
 
         assert "repo_analyses" in table_names
+        assert "jd_analyses" in table_names
         assert "resumes" in table_names
         assert "sessions" in table_names
 
         await engine.dispose()
+
+    async def test_old_resume_match_table_gets_batch_link_columns(self) -> None:
+        from storage.db.engine import _ensure_resume_match_columns
+
+        engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "CREATE TABLE resume_matches ("
+                "id VARCHAR PRIMARY KEY, user_id VARCHAR NOT NULL, "
+                "resume_id VARCHAR NOT NULL, job_description TEXT NOT NULL)"
+            ))
+            await conn.run_sync(_ensure_resume_match_columns)
+            columns = await conn.run_sync(
+                lambda sync_conn: {
+                    column["name"]
+                    for column in inspect(sync_conn).get_columns("resume_matches")
+                }
+            )
+
+        await engine.dispose()
+        assert "jd_analysis_id" in columns
+        assert "batch_id" in columns

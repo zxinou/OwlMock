@@ -11,7 +11,16 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from api.app import app
+from api.resume_analysis import ResumeAnalysis
 from storage.db.models import Base, Resume
+
+
+def structured_result(value=None, *, error: str | None = None, parse_error: str = ""):
+    result = MagicMock()
+    result.value = value
+    result.completion.error = error
+    result.parse_error = parse_error
+    return result
 
 
 @pytest.fixture
@@ -93,22 +102,21 @@ class TestResumeAnalyze:
         db_session.add(r)
         await db_session.commit()
 
-        mock_llm = MagicMock()
-        mock_result = MagicMock()
-        mock_result.text = json.dumps(mock_llm_response)
-        mock_result.error = None
-        mock_llm.chat = AsyncMock(return_value=mock_result)
+        mock_result = structured_result(ResumeAnalysis.model_validate(mock_llm_response))
 
         with (
-            patch("api.resume_analysis.ProfileLoader") as MockLoader,
-            patch("api.resume_analysis.LLMFactory.create", return_value=mock_llm),
+            patch("api.resume_analysis.ProfileLoader") as mock_loader,
+            patch(
+                "api.resume_analysis.chat_structured_with_fallback",
+                new=AsyncMock(return_value=mock_result),
+            ),
             patch(
                 "api.resume_analysis.prepare_resume_images",
                 return_value=[("fakepng", "image/png")],
             ),
         ):
-            MockLoader.return_value.load_all.return_value = None
-            MockLoader.return_value.get.return_value = mock_profile
+            mock_loader.return_value.load_all.return_value = None
+            mock_loader.return_value.get.return_value = mock_profile
 
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -164,22 +172,21 @@ class TestResumeAnalyze:
         db_session.add(r)
         await db_session.commit()
 
-        mock_llm = MagicMock()
-        mock_result = MagicMock()
-        mock_result.text = json.dumps(mock_llm_response)
-        mock_result.error = None
-        mock_llm.chat = AsyncMock(return_value=mock_result)
+        mock_result = structured_result(ResumeAnalysis.model_validate(mock_llm_response))
 
         with (
-            patch("api.resume_analysis.ProfileLoader") as MockLoader,
-            patch("api.resume_analysis.LLMFactory.create", return_value=mock_llm),
+            patch("api.resume_analysis.ProfileLoader") as mock_loader,
+            patch(
+                "api.resume_analysis.chat_structured_with_fallback",
+                new=AsyncMock(return_value=mock_result),
+            ),
             patch(
                 "api.resume_analysis.prepare_resume_images",
                 return_value=[("fakepng", "image/png")],
             ),
         ):
-            MockLoader.return_value.load_all.return_value = None
-            MockLoader.return_value.get.return_value = mock_profile
+            mock_loader.return_value.load_all.return_value = None
+            mock_loader.return_value.get.return_value = mock_profile
 
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -213,22 +220,21 @@ class TestResumeAnalyze:
         db_session.add(r)
         await db_session.commit()
 
-        mock_llm = MagicMock()
-        mock_result = MagicMock()
-        mock_result.text = ""
-        mock_result.error = "Model not found"
-        mock_llm.chat = AsyncMock(return_value=mock_result)
+        mock_result = structured_result(error="Model not found")
 
         with (
-            patch("api.resume_analysis.ProfileLoader") as MockLoader,
-            patch("api.resume_analysis.LLMFactory.create", return_value=mock_llm),
+            patch("api.resume_analysis.ProfileLoader") as mock_loader,
+            patch(
+                "api.resume_analysis.chat_structured_with_fallback",
+                new=AsyncMock(return_value=mock_result),
+            ),
             patch(
                 "api.resume_analysis.prepare_resume_images",
                 return_value=[("fakepng", "image/png")],
             ),
         ):
-            MockLoader.return_value.load_all.return_value = None
-            MockLoader.return_value.get.return_value = mock_profile
+            mock_loader.return_value.load_all.return_value = None
+            mock_loader.return_value.get.return_value = mock_profile
 
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"

@@ -194,6 +194,7 @@ class OpenAICompatibleLLM(BaseLLM):
             "messages": messages,
             "temperature": self.temperature,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
 
         if tools:
@@ -229,12 +230,20 @@ class OpenAICompatibleLLM(BaseLLM):
 
     def _is_retryable_error(self, error: Exception) -> bool:
         """Determine if an error is retryable."""
-        # Server errors (5xx) are retryable
         status_code = getattr(error, "status_code", None)
         if status_code and 500 <= status_code < 600:
             return True
-        # Rate limit errors are retryable
         if status_code == 429:
+            return True
+        message = str(error).lower()
+        if status_code == 403 and any(
+            marker in message
+            for marker in (
+                "free quota has been exhausted",
+                "insufficient_quota",
+                "allocated quota exceeded",
+            )
+        ):
             return True
         return False
 

@@ -22,10 +22,10 @@ const fileColor = computed(() => {
     css: '#A855F7',
     scss: '#A855F7',
     json: '#EAB308',
-    md: '#8A847B',
+    md: '#7B8D89',
     html: '#E34F26',
     rs: '#DEA584',
-    toml: '#8A847B',
+    toml: '#7B8D89',
   }
   return map[lang] || 'var(--color-ink-muted)'
 })

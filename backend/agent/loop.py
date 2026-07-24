@@ -153,7 +153,7 @@ class ReActAgent:
                     if hasattr(self.llm, "begin_stream_turn"):
                         self.llm.begin_stream_turn()
                     async for fe in self._process_llm_events(
-                        messages, self._stream_llm(messages)
+                        messages, self._stream_llm(messages), allow_fallback=True
                     ):
                         yield fe
 
@@ -195,7 +195,13 @@ class ReActAgent:
             yield self._make_state_event(AgentState.IDLE)
 
     async def _process_llm_events(
-        self, messages: list[dict], event_stream: AsyncIterator[LLMEvent]
+        self,
+        messages: list[dict],
+        event_stream: AsyncIterator[LLMEvent],
+        *,
+        allow_fallback: bool = False,
+        provider: str | None = None,
+        is_fallback: bool = False,
     ) -> AsyncIterator[FrontendEvent]:
         """Process LLM events, executing tools if needed.
 
@@ -261,49 +267,86 @@ class ReActAgent:
                     )
                 return
             elif isinstance(event, ProviderError):
+                if allow_fallback and event.retryable and self.profile.llm.fallback:
+                    fallback_llm = self._create_fallback_llm()
+                    if fallback_llm:
+                        async for fe in self._process_llm_events(
+                            messages,
+                            self._stream_llm(
+                                messages,
+                                llm=fallback_llm,
+                                provider=self.profile.llm.fallback.provider,
+                                is_fallback=True,
+                            ),
+                            allow_fallback=False,
+                            provider=self.profile.llm.fallback.provider,
+                            is_fallback=True,
+                        ):
+                            yield fe
+                        return
+
                 yield FrontendEvent(
                     type=EventType.ERROR,
                     payload={
                         "code": event.code,
-                        "message": event.message,
+                        "message": self._safe_provider_error_message(
+                            event,
+                            provider=provider or self.profile.llm.provider,
+                            is_fallback=is_fallback,
+                        ),
                         "retryable": event.retryable,
                     },
                 )
-                if event.retryable and self.profile.llm.fallback:
-                    fallback_llm = self._create_fallback_llm()
-                    if fallback_llm:
-                        async for fe in self._process_llm_events(
-                            messages, fallback_llm.stream(messages, self._get_tool_schemas())
-                        ):
-                            yield fe
-                        return
                 yield FrontendEvent(
                     type=EventType.TURN_DONE,
                     payload={"stop_reason": "error"},
                 )
                 return
 
-    async def _stream_llm(self, messages: list[dict]) -> AsyncIterator[LLMEvent]:
+    async def _stream_llm(
+        self,
+        messages: list[dict],
+        *,
+        llm: BaseLLM | None = None,
+        provider: str | None = None,
+        is_fallback: bool = False,
+    ) -> AsyncIterator[LLMEvent]:
         """Stream events from the LLM."""
+        active_llm = llm or self.llm
         tool_schemas = self._get_tool_schemas()
-        model = self.llm.get_model_name()
+        model = active_llm.get_model_name()
         prompt_tokens = 0
         completion_tokens = 0
+        provider_error = ""
 
-        with trace_llm_call(model=model, messages=messages) as generation:
-            async for event in self.llm.stream(messages, tool_schemas):
+        with trace_llm_call(
+            model=model,
+            messages=messages,
+            provider=provider or self.profile.llm.provider,
+            tools_count=len(tool_schemas),
+            is_fallback=is_fallback,
+        ) as generation:
+            async for event in active_llm.stream(messages, tool_schemas):
                 if isinstance(event, Usage):
                     prompt_tokens = event.prompt_tokens
                     completion_tokens = event.completion_tokens
+                elif isinstance(event, ProviderError):
+                    provider_error = event.message
                 yield event
 
             generation.update(
                 output="".join(self._text_buffer),
                 usage_details={
-                    "input": prompt_tokens,
-                    "output": completion_tokens,
-                    "total": prompt_tokens + completion_tokens,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
                 },
+                metadata={
+                    "provider": provider or self.profile.llm.provider,
+                    "fallback": str(is_fallback).lower(),
+                },
+                level="ERROR" if provider_error else "DEFAULT",
+                status_message=provider_error or None,
             )
 
     async def _execute_tools(self) -> list[FrontendEvent]:
@@ -353,6 +396,9 @@ class ReActAgent:
                 repo_path = result.data.get("repo_path")
                 if repo_path:
                     self._current_repo_path = repo_path
+                repo_url = result.data.get("repo_url")
+                if repo_url:
+                    self._repo_url = repo_url
 
             # Tool call end event
             events.append(FrontendEvent(
@@ -411,6 +457,9 @@ class ReActAgent:
                 repo_path = result.data.get("repo_path")
                 if repo_path:
                     self._current_repo_path = repo_path
+                repo_url = result.data.get("repo_url")
+                if repo_url:
+                    self._repo_url = repo_url
 
             yield FrontendEvent(
                 type=EventType.TOOL_CALL_END,
@@ -530,6 +579,43 @@ class ReActAgent:
             )
         except Exception:
             return None
+
+    def _safe_provider_error_message(
+        self,
+        event: ProviderError,
+        *,
+        provider: str | None = None,
+        is_fallback: bool = False,
+    ) -> str:
+        """Return a concise user-facing provider error."""
+        message = event.message or ""
+        code = str(event.code or "")
+        lowered = message.lower()
+        provider_name = self._provider_display_name(provider or self.profile.llm.provider)
+        if (
+            code == "429"
+            or "insufficient_quota" in lowered
+            or "allocated quota exceeded" in lowered
+            or "quota" in lowered
+        ):
+            if is_fallback:
+                return f"{provider_name}模型暂时返回额度/限流错误，请稍后重试或检查该模型额度。"
+            if self.profile.llm.fallback:
+                fallback_name = self._provider_display_name(self.profile.llm.fallback.provider)
+                return (
+                    f"{provider_name}模型返回额度/限流错误；已配置{fallback_name}备用模型，"
+                    "但本次没有成功接管，请稍后重试。"
+                )
+            return f"{provider_name}模型额度/限流不足，请切换模型或稍后重试。"
+        return message or f"{provider_name}模型服务暂时不可用，请稍后重试。"
+
+    def _provider_display_name(self, provider: str) -> str:
+        names = {
+            "dashscope": "Qwen",
+            "dashscope_realtime": "Qwen 实时",
+            "zhipu": "智谱",
+        }
+        return names.get(provider, provider)
 
     def _get_api_key(self, provider: str) -> str:
         from config.settings import settings

@@ -92,6 +92,7 @@ class TestChatMethod:
         # stream() catches the error and yields ProviderError, so chat() returns normally
         assert result.text == ""
         assert result.tool_calls == []
+        assert result.retryable is True
 
 
 class TestBuildMultimodalMessage:

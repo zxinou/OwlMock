@@ -341,11 +341,11 @@ function onFileChange(e) {
 }
 
 /* Dark mode */
-:global(.dark) .settings-panel {
+html.dark .settings-panel {
   background: var(--color-surface);
 }
 
-:global(.dark) .settings-input {
+html.dark .settings-input {
   background: var(--color-surface-alt);
   border-color: var(--color-border);
 }

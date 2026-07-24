@@ -16,6 +16,8 @@ class CompletionResult:
     tool_calls: list[dict]
     usage: Usage | None = None
     error: str | None = None
+    error_code: str = ""
+    retryable: bool = False
 
 
 class BaseLLM(ABC):
@@ -40,6 +42,8 @@ class BaseLLM(ABC):
         tool_calls: list[dict] = []
         usage: Usage | None = None
         error: str | None = None
+        error_code = ""
+        retryable = False
 
         async for event in self.stream(messages, tools):
             if isinstance(event, TextDelta):
@@ -54,12 +58,16 @@ class BaseLLM(ABC):
                 usage = event
             elif isinstance(event, ProviderError):
                 error = event.message
+                error_code = event.code
+                retryable = event.retryable
 
         return CompletionResult(
             text="".join(text_parts),
             tool_calls=tool_calls,
             usage=usage,
             error=error,
+            error_code=error_code,
+            retryable=retryable,
         )
 
     @abstractmethod

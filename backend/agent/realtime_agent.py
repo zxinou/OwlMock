@@ -142,6 +142,11 @@ class RealtimeAgent:
         self._audio_seconds_used = 0.0
         self._last_activity_ts: float = 0.0
         self._realtime_session: RealtimeSession | None = None
+        self._manual_turn_mode = bool(
+            self.profile.realtime and self.profile.realtime.vad_mode == "none"
+        )
+        self._response_authorized = not self._manual_turn_mode
+        self._discarding_unauthorized_response = False
 
     async def run(self, client_ws: object) -> None:
         """Run the realtime agent.
@@ -239,7 +244,7 @@ class RealtimeAgent:
         provider = (
             self.profile.realtime.provider
             if self.profile.realtime
-            else "openai_realtime"
+            else "dashscope_realtime"
         )
         input_rate = 16000 if provider == "dashscope_realtime" else 24000
         return {
@@ -327,6 +332,8 @@ class RealtimeAgent:
 
             elif msg_type == "control.commit":
                 # Manual VAD: commit audio buffer and trigger response
+                self._response_authorized = True
+                self._discarding_unauthorized_response = False
                 await upstream.commit_audio()
                 await upstream.create_response()
                 self._set_state(RealtimeAgentState.THINKING)
@@ -342,6 +349,8 @@ class RealtimeAgent:
                 text = payload.get("text", "")
                 if text:
                     # Inject as user message and trigger response
+                    self._response_authorized = True
+                    self._discarding_unauthorized_response = False
                     await upstream.inject_summary(
                         json.dumps({"role": "user", "content": text})
                     )
@@ -371,6 +380,25 @@ class RealtimeAgent:
                 return
 
             self._last_activity_ts = asyncio.get_event_loop().time()
+
+            is_response_event = isinstance(event, (
+                ResponseAudioDelta,
+                ResponseAudioDone,
+                ResponseAudioTranscriptDelta,
+                ResponseAudioTranscriptDone,
+                ResponseFunctionCallArgumentsDone,
+                ResponseDone,
+            ))
+            if self._manual_turn_mode and is_response_event and not self._response_authorized:
+                if isinstance(event, ResponseDone):
+                    self._discarding_unauthorized_response = False
+                elif not self._discarding_unauthorized_response:
+                    self._discarding_unauthorized_response = True
+                    logger.warning(
+                        "Blocked unauthorized realtime response before manual commit"
+                    )
+                    await upstream.cancel_response()
+                continue
 
             if isinstance(event, SessionCreated):
                 logger.debug("Realtime session created: %s", event.session_id)
@@ -445,6 +473,13 @@ class RealtimeAgent:
 
             elif isinstance(event, ResponseDone):
                 await self._on_response_done(event)
+                if self._manual_turn_mode:
+                    self._response_authorized = False
+                if not self._closed:
+                    await self._push_to_client(client_ws, FrontendEvent(
+                        type=EventType.STATE_CHANGED,
+                        payload={"state": RealtimeAgentState.LISTENING.value},
+                    ))
 
             elif isinstance(event, RealtimeError):
                 await self._push_to_client(client_ws, FrontendEvent(

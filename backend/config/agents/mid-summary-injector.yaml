@@ -1,9 +1,13 @@
 id: "mid-summary-injector"
 prompt_template: "data/prompt/mid_summary_injector.md"
 llm:
-  provider: "mimo"
-  model: "mimo-v2.5"
+  provider: "dashscope"
+  model: "qwen3.5-omni-plus-2026-03-15"
   temperature: 0.3
+  fallback:
+    provider: "zhipu"
+    model: "glm-4.6v-flash"
+    temperature: 0.3
 tools: []
 skills: []
 context:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncIterator
 
 import pytest
@@ -34,105 +33,72 @@ class FakeLLM(BaseLLM):
 @pytest.fixture
 def client():
     """Create a test client."""
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+async def async_client():
+    """Create an async client with the application lifespan running."""
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as test_client:
+            yield test_client
 
 
 @pytest.mark.asyncio
-async def test_create_session():
+async def test_create_session(async_client: AsyncClient):
     """Test: create a session via REST API."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/api/sessions",
-            json={
-                "profile_id": "interviewer-technical",
-                "mode": "text",
-                "user_id": "test-user",
-            },
-        )
+    response = await async_client.post(
+        "/api/sessions",
+        json={
+            "profile_id": "interviewer-technical",
+            "mode": "text",
+            "user_id": "test-user",
+        },
+    )
 
-        # Should succeed or fail gracefully if profile not loaded
-        assert response.status_code in [200, 400, 500]
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_list_sessions():
+async def test_list_sessions(async_client: AsyncClient):
     """Test: list sessions via REST API."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/api/sessions")
+    response = await async_client.get("/api/sessions")
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "sessions" in data
-        assert "total" in data
+    assert response.status_code == 200
+    data = response.json()
+    assert "sessions" in data
+    assert "total" in data
 
 
 @pytest.mark.asyncio
-async def test_get_session_events():
+async def test_get_session_events(async_client: AsyncClient):
     """Test: get session events via REST API."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # First create a session
-        create_response = await client.post(
-            "/api/sessions",
-            json={
-                "profile_id": "interviewer-technical",
-                "mode": "text",
-                "user_id": "test-user",
-            },
-        )
+    create_response = await async_client.post(
+        "/api/sessions",
+        json={
+            "profile_id": "interviewer-technical",
+            "mode": "text",
+            "user_id": "test-user",
+        },
+    )
+    assert create_response.status_code == 200
+    session_id = create_response.json()["session_id"]
 
-        if create_response.status_code == 200:
-            session_id = create_response.json()["session_id"]
-
-            # Get events
-            events_response = await client.get(f"/api/sessions/{session_id}/events")
-            assert events_response.status_code == 200
-            data = events_response.json()
-            assert "events" in data
+    events_response = await async_client.get(f"/api/sessions/{session_id}/events")
+    assert events_response.status_code == 200
+    data = events_response.json()
+    assert "events" in data
 
 
-@pytest.mark.asyncio
-async def test_websocket_connection():
+def test_websocket_connection(client: TestClient):
     """Test: WebSocket connection and message exchange."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # First create a session
-        create_response = await client.post(
-            "/api/sessions",
-            json={
-                "profile_id": "interviewer-technical",
-                "mode": "text",
-                "user_id": "test-user",
-            },
-        )
+    with client.websocket_connect("/ws/voice/missing-session") as websocket:
+        event = websocket.receive_json()
 
-        if create_response.status_code == 200:
-            session_id = create_response.json()["session_id"]
-
-            # Connect to WebSocket
-            async with client.stream("GET", f"/ws/interview/{session_id}") as ws:
-                # Send a message
-                await ws.send_json({
-                    "type": "user.text",
-                    "payload": {"text": "Hello"},
-                })
-
-                # Receive events
-                events = []
-                async for line in ws.aiter_lines():
-                    if line:
-                        try:
-                            event = json.loads(line)
-                            events.append(event)
-                            if event.get("type") == "turn.done":
-                                break
-                        except json.JSONDecodeError:
-                            continue
-
-                # Should have received some events
-                assert len(events) > 0
+    assert event["type"] == "error"
+    assert event["payload"]["code"] == "session_not_found"
 
 
 def test_health_check(client):
@@ -141,4 +107,4 @@ def test_health_check(client):
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
-    assert data["service"] == "CapyMock API"
+    assert data["service"] == "OwlMock API"

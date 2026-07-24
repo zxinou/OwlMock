@@ -9,6 +9,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from service.task_service import TaskStatus, task_service
+from storage.db.engine import async_session_factory
+from storage.db.models import JdAnalysisRecord, RepoAnalysis, ResumeMatchRecord
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,8 @@ class TaskStatusResponse(BaseModel):
     task_id: str
     status: str
     progress: float | None = None
+    stage: str | None = None
+    message: str | None = None
     result: dict | None = None
     error: str | None = None
 
@@ -35,12 +40,38 @@ async def get_task_status(task_id: str):
     """Get task status and result."""
     task = task_service.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(RepoAnalysis).where(RepoAnalysis.id == task_id)
+            )
+            analysis = result.scalar_one_or_none()
+            if analysis is None:
+                result = await db.execute(
+                    select(JdAnalysisRecord).where(JdAnalysisRecord.id == task_id)
+                )
+                analysis = result.scalar_one_or_none()
+            if analysis is None:
+                result = await db.execute(
+                    select(ResumeMatchRecord).where(ResumeMatchRecord.id == task_id)
+                )
+                analysis = result.scalar_one_or_none()
+        if analysis is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return TaskStatusResponse(
+            task_id=analysis.id,
+            status=analysis.status,
+            progress=analysis.progress,
+            stage=analysis.stage,
+            message=analysis.error,
+            error=analysis.error,
+        )
 
     return TaskStatusResponse(
         task_id=task.task_id,
         status=task.status.value,
-        progress=1.0 if task.status == TaskStatus.COMPLETED else None,
+        progress=task.progress,
+        stage=task.stage,
+        message=task.message,
         result=task.result if task.status == TaskStatus.COMPLETED else None,
         error=task.error,
     )
@@ -58,7 +89,8 @@ async def stream_task_progress(task_id: str):
         async def single_event():
             data = {
                 "status": task.status.value,
-                "progress": 1.0,
+                "progress": task.progress,
+                "stage": task.stage,
                 "message": "Task already completed",
             }
             yield f"data: {json.dumps(data)}\n\n"
@@ -78,6 +110,7 @@ async def stream_task_progress(task_id: str):
             data = {
                 "status": update.status.value,
                 "progress": update.progress,
+                "stage": update.data.get("stage"),
                 "message": update.message,
                 "data": update.data,
             }

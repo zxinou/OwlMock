@@ -81,6 +81,11 @@ class SessionStore:
 
         return events
 
+    def delete(self, user_id: str, session_id: str) -> None:
+        """Delete a session's JSONL file if it exists."""
+        session_path = self._get_session_path(user_id, session_id)
+        session_path.unlink(missing_ok=True)
+
     def update_metadata(
         self,
         user_id: str,

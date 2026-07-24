@@ -12,6 +12,7 @@ from api.chat import router as sse_router
 from api.github_analysis import router as analysis_router
 from api.jd_analysis import router as jd_router
 from api.resume_analysis import router as resume_router
+from api.resume_matches import router as resume_matches_router
 from api.sessions import router as api_router
 from api.tasks import router as tasks_router
 from api.ws import router as ws_router
@@ -70,7 +71,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="CapyMock API",
+    title="OwlMock API",
     description="AI Interview Preparation Backend",
     version="0.1.0",
     lifespan=lifespan,
@@ -83,10 +84,11 @@ app.include_router(tasks_router, prefix="/api")
 app.include_router(analysis_router, prefix="/api")
 app.include_router(jd_router, prefix="/api")
 app.include_router(resume_router, prefix="/api")
+app.include_router(resume_matches_router, prefix="/api")
 app.include_router(ws_router)
 
 
 @app.get("/")
 async def root():
     """Health check endpoint."""
-    return {"status": "ok", "service": "CapyMock API"}
+    return {"status": "ok", "service": "OwlMock API"}

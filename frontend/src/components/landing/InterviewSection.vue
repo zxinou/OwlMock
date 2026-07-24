@@ -1,6 +1,6 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import CapybaraLogo from '@/components/common/CapybaraLogo.vue'
+import OwlLogo from '@/components/common/OwlLogo.vue'
 
 const router = useRouter()
 </script>
@@ -19,7 +19,7 @@ const router = useRouter()
         </div>
         <h2 class="text-3xl lg:text-5xl font-bold mb-4" style="font-family: var(--font-heading)">两种模式，随时开练</h2>
         <p class="text-lg mx-auto" style="color: var(--color-ink-light); max-width: 560px; line-height: var(--leading-relaxed)">
-          Capy 会结合你的简历和目标岗位进行个性化提问，像真实面试一样自然
+          猫头鹰面试官会结合你的简历和目标岗位进行个性化提问，像真实面试一样自然
         </p>
       </div>
 
@@ -38,14 +38,14 @@ const router = useRouter()
           @click="router.push('/interview')"
         >
           <!-- Mode badge -->
-          <div class="inline-flex items-center gap-2 text-xs font-semibold rounded-full mb-6" style="padding: 0.25rem 0.75rem; background: #EDE9F5; color: #6B5B95">
+          <div class="inline-flex items-center gap-2 text-xs font-semibold rounded-full mb-6" style="padding: 0.25rem 0.75rem; background: #E2ECE7; color: #2D6B65">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.2"/><line x1="5" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><line x1="5" y1="7.5" x2="8" y2="7.5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
             文字对话模式
           </div>
 
           <h3 class="text-2xl font-bold mb-3" style="font-family: var(--font-heading)">文字模拟面试</h3>
           <p class="text-sm mb-8" style="color: var(--color-ink-light); line-height: var(--leading-relaxed)">
-            以对话形式进行，Capy 面试官会根据你的回答深入追问。
+            以对话形式进行，猫头鹰面试官会根据你的回答深入追问。
             适合喜欢思考后再回答的候选人，可以反复推敲每个回答。
           </p>
 
@@ -86,7 +86,7 @@ const router = useRouter()
           @click="router.push('/interview')"
         >
           <!-- Mode badge -->
-          <div class="inline-flex items-center gap-2 text-xs font-semibold rounded-full mb-6" style="padding: 0.25rem 0.75rem; background: #DCF0E4; color: #3D7A54">
+          <div class="inline-flex items-center gap-2 text-xs font-semibold rounded-full mb-6" style="padding: 0.25rem 0.75rem; background: #F7EDCB; color: #8B6518">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="5" y="1" width="4" height="8" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M3 7 C3 10, 5 12, 7 12 C9 12, 11 10, 11 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/><line x1="7" y1="12" x2="7" y2="14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
             语音通话模式
           </div>
@@ -94,7 +94,7 @@ const router = useRouter()
           <h3 class="text-2xl font-bold mb-3" style="font-family: var(--font-heading)">语音模拟面试</h3>
           <p class="text-sm mb-8" style="color: var(--color-ink-light); line-height: var(--leading-relaxed)">
             用语音实时对话，更接近真实面试场景。
-            Capy 面试官会分析你的语速、表达流畅度，训练临场应变能力。
+            猫头鹰面试官会分析你的语速、表达流畅度，训练临场应变能力。
           </p>
 
           <!-- Voice preview -->
@@ -102,8 +102,8 @@ const router = useRouter()
             <div class="text-xs font-semibold uppercase tracking-wider mb-4" style="color: var(--color-ink-muted); letter-spacing: 0.08em">语音交互</div>
             <div class="flex flex-col items-center gap-4">
               <!-- Avatar -->
-              <div class="w-14 h-14 rounded-full flex items-center justify-center relative" style="background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary))">
-                <CapybaraLogo :size="28" color="white" :stroke-width="2" />
+              <div class="w-14 h-14 rounded-full flex items-center justify-center relative" style="background: var(--color-white); border: 1px solid var(--color-border)">
+                <OwlLogo :size="30" />
               </div>
 
               <!-- Wave bars -->
@@ -111,7 +111,7 @@ const router = useRouter()
                 <span v-for="n in 7" :key="n" class="rounded-sm animate-wave-bar" :style="{ width: '3px', background: 'var(--color-primary)', animationDelay: `${(n-1) * 0.1}s`, height: [8, 16, 24, 16, 8, 20, 12][n-1] + 'px' }"></span>
               </div>
 
-              <p class="text-sm" style="color: var(--color-ink-muted)">Capy 面试官正在聆听...</p>
+              <p class="text-sm" style="color: var(--color-ink-muted)">猫头鹰面试官正在聆听...</p>
             </div>
           </div>
         </div>

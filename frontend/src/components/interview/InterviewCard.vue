@@ -6,7 +6,7 @@ const props = defineProps({
   interview: { type: Object, required: true }
 })
 
-const emit = defineEmits(['view-summary', 'continue'])
+const emit = defineEmits(['view-summary', 'continue', 'delete'])
 
 const formattedDate = computed(() => {
   const date = new Date(props.interview.date)
@@ -30,6 +30,10 @@ function handleClick() {
     emit('continue', props.interview.id)
   }
 }
+
+function handleDelete() {
+  emit('delete', props.interview.id)
+}
 </script>
 
 <template>
@@ -39,26 +43,39 @@ function handleClick() {
   >
     <div class="flex items-start gap-4">
       <!-- Icon -->
-      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-[#fce4dc] to-[#f5d8cc] flex items-center justify-center shrink-0">
+      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-[#f7ddd6] to-[#efc7bb] flex items-center justify-center shrink-0">
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-          <rect x="4" y="3" width="14" height="16" rx="2" stroke="#E8937A" stroke-width="1.8"/>
-          <circle cx="11" cy="9" r="3" stroke="#E8937A" stroke-width="1.3"/>
-          <path d="M6 17c0-3 2.2-5 5-5s5 2 5 5" stroke="#E8937A" stroke-width="1.3" stroke-linecap="round"/>
+          <rect x="4" y="3" width="14" height="16" rx="2" stroke="#D86C57" stroke-width="1.8"/>
+          <circle cx="11" cy="9" r="3" stroke="#D86C57" stroke-width="1.3"/>
+          <path d="M6 17c0-3 2.2-5 5-5s5 2 5 5" stroke="#D86C57" stroke-width="1.3" stroke-linecap="round"/>
         </svg>
       </div>
 
       <!-- Content -->
       <div class="flex-1 min-w-0">
-        <div class="flex items-center justify-between gap-3">
+        <div class="flex items-start justify-between gap-3">
           <h3 class="text-sm font-semibold text-ink">
             {{ INTERVIEW_TYPES[interview.type] }}
           </h3>
-          <span
-            class="px-2 py-1 rounded-full text-xs font-medium"
-            :class="STATUS_COLORS[interview.status]"
-          >
-            {{ INTERVIEW_STATUS[interview.status] }}
-          </span>
+          <div class="flex items-center gap-2 shrink-0">
+            <span
+              class="px-2 py-1 rounded-full text-xs font-medium"
+              :class="STATUS_COLORS[interview.status]"
+            >
+              {{ INTERVIEW_STATUS[interview.status] }}
+            </span>
+            <button
+              class="delete-btn"
+              type="button"
+              title="删除面试记录"
+              aria-label="删除面试记录"
+              @click.stop="handleDelete"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 4h8l-.7 8H3.7L3 4zM5 4V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M2 4h10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div class="mt-3 space-y-1.5">
@@ -118,3 +135,21 @@ function handleClick() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.delete-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  color: var(--color-ink-muted);
+  transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.delete-btn:hover {
+  background: rgba(216, 108, 87, 0.12);
+  color: var(--color-accent);
+}
+</style>

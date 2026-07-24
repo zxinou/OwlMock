@@ -1,263 +1,322 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { BriefcaseBusiness, FilePlus2, FolderOpen, History, Sparkles, Trash2, Upload } from 'lucide-vue-next'
 import AnalysisLayout from '@/layouts/AnalysisLayout.vue'
-import LoadingOverlay from '@/components/common/LoadingOverlay.vue'
-import ResultsHeader from '@/components/common/ResultsHeader.vue'
-import SectionCard from '@/components/common/SectionCard.vue'
+import AnalysisErrorNotice from '@/components/common/AnalysisErrorNotice.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import FileUploadZone from '@/components/common/FileUploadZone.vue'
+import AnalyzedJobPicker from '@/components/resume/AnalyzedJobPicker.vue'
+import ResumeLibrary from '@/components/resume/ResumeLibrary.vue'
+import ResumeMatchHistory from '@/components/resume/ResumeMatchHistory.vue'
 import { api } from '@/api/index.js'
 
-// State: 'list' | 'upload' | 'analyzing' | 'result'
-const view = ref('list')
+const router = useRouter()
+const resumeMode = ref('library')
 const resumes = ref([])
-const selectedResume = ref(null)
-const uploadedFile = ref(null)
-const loading = ref(false)
-const loadingText = ref('')
+const completedJds = ref([])
+const history = ref([])
+const selectedResumeId = ref('')
+const selectedJdIds = ref([])
+const uploadFile = ref(null)
+const loadingResumes = ref(false)
+const loadingJds = ref(false)
+const loadingHistory = ref(false)
+const uploading = ref(false)
+const submitting = ref(false)
 const error = ref(null)
-const results = null // unused, kept for template compatibility
+const deleteTarget = ref(null)
+const deleting = ref(false)
+const managingHistory = ref(false)
+const selectedHistoryIds = ref([])
 
-// Load resumes on mount
+const canSubmit = computed(() => Boolean(selectedResumeId.value && selectedJdIds.value.length))
+const submitLabel = computed(() => selectedJdIds.value.length
+  ? `开始匹配 ${selectedJdIds.value.length} 个岗位`
+  : '请选择岗位')
+
 onMounted(async () => {
-  await loadResumes()
+  await Promise.all([loadResumes(), loadJds(), loadHistory()])
 })
 
 async function loadResumes() {
+  loadingResumes.value = true
   try {
     resumes.value = await api.getResumes()
-    if (resumes.value.length === 0) {
-      view.value = 'upload'
+    if (!selectedResumeId.value && resumes.value.length) selectedResumeId.value = resumes.value[0].id
+    if (!resumes.value.length) resumeMode.value = 'upload'
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loadingResumes.value = false
+  }
+}
+
+async function loadJds() {
+  loadingJds.value = true
+  try {
+    const records = await api.getJdAnalyses()
+    completedJds.value = records.filter((item) => item.status === 'completed' && item.result)
+    const available = new Set(completedJds.value.map((item) => item.id))
+    selectedJdIds.value = selectedJdIds.value.filter((id) => available.has(id))
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loadingJds.value = false
+  }
+}
+
+async function loadHistory() {
+  loadingHistory.value = true
+  try {
+    history.value = await api.getResumeMatches()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+function toggleJd(id) {
+  selectedJdIds.value = selectedJdIds.value.includes(id)
+    ? selectedJdIds.value.filter((value) => value !== id)
+    : [...selectedJdIds.value, id]
+}
+
+async function uploadResume() {
+  if (!uploadFile.value?.raw || uploading.value) return
+  uploading.value = true
+  error.value = null
+  try {
+    const created = await api.uploadResume(uploadFile.value.raw)
+    await loadResumes()
+    selectedResumeId.value = created.id
+    uploadFile.value = null
+    resumeMode.value = 'library'
+  } catch (e) {
+    error.value = e.message || '简历上传失败，请稍后重试'
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function submitMatch() {
+  if (!canSubmit.value || submitting.value) return
+  submitting.value = true
+  error.value = null
+  try {
+    const batch = await api.submitResumeMatchBatch({
+      resumeId: selectedResumeId.value,
+      jdAnalysisIds: selectedJdIds.value,
+    })
+    await router.push({ name: 'resume-match-batch', params: { batchId: batch.batch_id } })
+  } catch (e) {
+    error.value = e.message || '创建匹配任务失败，请稍后重试'
+  } finally {
+    submitting.value = false
+  }
+}
+
+function openHistory(item) {
+  if (item.batch_id) {
+    router.push({ name: 'resume-match-batch', params: { batchId: item.batch_id } })
+    return
+  }
+  const completed = item.status === 'completed' && item.result
+  router.push({
+    name: completed ? 'resume-match-report' : 'resume-match-task',
+    params: completed ? { matchId: item.id } : { taskId: item.id },
+  })
+}
+
+function openLegacy(item) {
+  router.push({ name: 'resume-legacy-report', params: { resumeId: item.id } })
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value) return
+  deleting.value = true
+  error.value = null
+  try {
+    if (deleteTarget.value.kind === 'batch-match') {
+      await api.deleteResumeMatches(deleteTarget.value.ids)
+      history.value = history.value.filter((item) => !deleteTarget.value.ids.includes(item.id))
+      selectedHistoryIds.value = []
+      managingHistory.value = false
+    } else if (deleteTarget.value.kind === 'match') {
+      await api.deleteResumeMatch(deleteTarget.value.item.id)
+      history.value = history.value.filter((item) => item.id !== deleteTarget.value.item.id)
+    } else {
+      const resumeId = deleteTarget.value.item.id
+      await api.deleteResume(resumeId)
+      resumes.value = resumes.value.filter((item) => item.id !== resumeId)
+      history.value = history.value.filter((item) => item.resume_id !== resumeId)
+      if (selectedResumeId.value === resumeId) selectedResumeId.value = resumes.value[0]?.id || ''
+      if (!resumes.value.length) resumeMode.value = 'upload'
     }
+    deleteTarget.value = null
   } catch (e) {
-    error.value = e.message
-  }
-}
-
-function goToUpload() {
-  view.value = 'upload'
-  uploadedFile.value = null
-  error.value = null
-}
-
-function goToList() {
-  view.value = 'list'
-  selectedResume.value = null
-  error.value = null
-  loadResumes()
-}
-
-async function handleUpload() {
-  if (!uploadedFile.value) return
-  loading.value = true
-  loadingText.value = '正在上传简历...'
-  error.value = null
-  try {
-    await api.uploadResume(uploadedFile.value.raw)
-    uploadedFile.value = null
-    await loadResumes()
-    view.value = 'list'
-  } catch (e) {
-    error.value = e.message
+    error.value = e.message || '删除失败，请稍后重试'
   } finally {
-    loading.value = false
+    deleting.value = false
   }
 }
 
-async function analyzeResume(resume, force = false) {
-  loading.value = true
-  loadingText.value = '正在分析简历，Capy 在仔细阅读中...'
-  error.value = null
-  try {
-    const data = await api.analyzeResume(resume.id, force)
-    selectedResume.value = { ...resume, analysis_result: data }
-    view.value = 'result'
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
+function toggleHistoryItem(item) {
+  selectedHistoryIds.value = selectedHistoryIds.value.includes(item.id)
+    ? selectedHistoryIds.value.filter((id) => id !== item.id)
+    : [...selectedHistoryIds.value, item.id]
 }
 
-async function viewCachedResult(resume) {
-  loading.value = true
-  loadingText.value = '加载分析结果...'
-  error.value = null
-  try {
-    const detail = await api.getResume(resume.id)
-    selectedResume.value = detail
-    view.value = 'result'
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
+function toggleManageHistory() {
+  managingHistory.value = !managingHistory.value
+  selectedHistoryIds.value = []
 }
 
-async function deleteResume(resume) {
-  try {
-    await api.deleteResume(resume.id)
-    await loadResumes()
-  } catch (e) {
-    error.value = e.message
-  }
-}
-
-function formatDate(iso) {
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+function toggleSelectAllHistory() {
+  selectedHistoryIds.value = selectedHistoryIds.value.length === history.value.length
+    ? [] : history.value.map((item) => item.id)
 }
 </script>
 
 <template>
   <AnalysisLayout>
-    <!-- Resume List View -->
-    <div v-if="view === 'list'">
-      <div class="flex items-center justify-between mb-6">
-        <div>
-          <h2 class="text-xl font-bold">我的简历</h2>
-          <p class="text-sm text-ink-muted mt-1">管理你的简历，上传后可进行分析和模拟面试</p>
-        </div>
-        <button class="btn btn--primary" @click="goToUpload">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          上传新简历
-        </button>
+    <header class="resume-page-head">
+      <div>
+        <h1>简历匹配分析</h1>
+        <p>选择一份简历，与已经完成分析的多个岗位同时匹配。</p>
       </div>
+      <div class="resume-head-mark" aria-hidden="true"><BriefcaseBusiness :size="20" /></div>
+    </header>
 
-      <div v-if="error" class="mb-4 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-600 dark:text-red-400">
-        {{ error }}
-      </div>
+    <AnalysisErrorNotice v-if="error" class="mb-5" :message="error" :retryable="false" />
 
-      <!-- Resume cards -->
-      <div class="space-y-4">
-        <div
-          v-for="resume in resumes"
-          :key="resume.id"
-          class="bg-white dark:bg-surface border border-border-light dark:border-border rounded-xl p-5 flex items-center gap-4 transition-theme hover:shadow-subtle"
-        >
-          <!-- File icon -->
-          <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-[#fce4dc] to-[#f5d8cc] flex items-center justify-center shrink-0">
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-              <rect x="4" y="3" width="14" height="16" rx="2" stroke="#E8937A" stroke-width="1.5"/>
-              <line x1="7" y1="8" x2="15" y2="8" stroke="#E8937A" stroke-width="1" opacity="0.5"/>
-              <line x1="7" y1="11" x2="12" y2="11" stroke="#E8937A" stroke-width="1" opacity="0.5"/>
-            </svg>
-          </div>
-
-          <!-- Info -->
-          <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium truncate">{{ resume.file_name }}</div>
-            <div class="text-xs text-ink-muted mt-0.5">
-              {{ resume.file_type?.toUpperCase() }} · {{ formatDate(resume.created_at) }}
-              <span v-if="resume.has_analysis" class="ml-2 text-moss-green">已分析</span>
-            </div>
-          </div>
-
-          <!-- Actions -->
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              v-if="resume.has_analysis"
-              class="btn btn--ghost text-xs"
-              @click="viewCachedResult(resume)"
-            >查看结果</button>
-            <button
-              class="btn btn--secondary text-xs"
-              @click="analyzeResume(resume, resume.has_analysis)"
-            >{{ resume.has_analysis ? '重新分析' : '分析' }}</button>
-            <button
-              class="w-8 h-8 rounded-full flex items-center justify-center text-ink-muted hover:bg-red-500/10 hover:text-red-500 transition-theme"
-              @click="deleteResume(resume)"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 4h8l-.7 8H3.7L3 4zM5 4V3a1 1 0 011-1h2a1 1 0 011 1v1M2 4h10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+    <div class="resume-input-grid">
+      <section class="resume-workbench">
+        <div class="resume-section-head">
+          <div><span>第一步</span><h2>选择简历</h2></div>
+          <div class="resume-mode-switch" role="tablist" aria-label="简历来源">
+            <button type="button" role="tab" :aria-selected="resumeMode === 'library'" :class="{ active: resumeMode === 'library' }" @click="resumeMode = 'library'">
+              <FolderOpen :size="15" />简历库
+            </button>
+            <button type="button" role="tab" :aria-selected="resumeMode === 'upload'" :class="{ active: resumeMode === 'upload' }" @click="resumeMode = 'upload'">
+              <Upload :size="15" />上传新简历
             </button>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Upload View -->
-    <div v-if="view === 'upload'">
-      <div class="flex items-center gap-3 mb-6">
-        <button class="w-8 h-8 rounded-full flex items-center justify-center text-ink-muted hover:bg-surface-alt transition-theme" @click="goToList">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M11 4L6 9l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <div>
-          <h2 class="text-xl font-bold">上传简历</h2>
-          <p class="text-sm text-ink-muted">支持 PDF、PNG、JPG 格式，最大 10MB</p>
-        </div>
-      </div>
-
-      <div class="bg-white dark:bg-surface border-2 border-border-light dark:border-border rounded-2xl p-8 transition-theme focus-within:border-primary focus-within:shadow-glow">
-        <FileUploadZone
-          :file="uploadedFile"
-          label="点击上传或拖拽简历文件"
-          hint="支持 PDF、PNG、JPG 格式"
-          :formats="['.pdf', '.png', '.jpg', '.jpeg']"
-          accept=".pdf,.png,.jpg,.jpeg"
-          @select="uploadedFile = $event"
-          @remove="uploadedFile = null"
+        <ResumeLibrary
+          v-if="resumeMode === 'library'"
+          :items="resumes"
+          :selected-id="selectedResumeId"
+          :loading="loadingResumes"
+          @select="selectedResumeId = $event"
+          @legacy="openLegacy"
+          @delete="deleteTarget = { kind: 'resume', item: $event }"
         />
-
-        <div v-if="error" class="mt-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-600 dark:text-red-400">
-          {{ error }}
-        </div>
-
-        <div class="flex items-center justify-between mt-5">
-          <span class="text-xs text-ink-muted">上传后可进行简历分析和模拟面试</span>
-          <button class="btn btn--primary" :disabled="!uploadedFile || loading" @click="handleUpload">
-            上传并保存
+        <div v-else class="resume-upload-mode">
+          <FileUploadZone
+            :file="uploadFile"
+            label="上传简历文件"
+            hint="PDF、PNG、JPG 或 JPEG，最大 10MB"
+            :formats="['.pdf', '.png', '.jpg', '.jpeg']"
+            accept=".pdf,.png,.jpg,.jpeg"
+            @select="uploadFile = $event"
+            @remove="uploadFile = null"
+          />
+          <button type="button" class="btn btn--secondary" :disabled="!uploadFile || uploading" @click="uploadResume">
+            <FilePlus2 :size="16" />{{ uploading ? '正在上传...' : '上传并选中' }}
           </button>
         </div>
-      </div>
-    </div>
 
-    <!-- Analysis Result View -->
-    <div v-if="view === 'result' && selectedResume">
-      <div class="flex items-center gap-3 mb-6">
-        <button class="w-8 h-8 rounded-full flex items-center justify-center text-ink-muted hover:bg-surface-alt transition-theme" @click="goToList">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M11 4L6 9l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <div>
-          <h2 class="text-xl font-bold">简历分析报告</h2>
-          <p class="text-sm text-ink-muted">{{ selectedResume.file_name }}</p>
+        <div class="resume-divider"></div>
+
+        <div class="resume-section-head job-section-head">
+          <div><span>第二步</span><h2>选择已分析岗位</h2></div>
+          <small>已选择 {{ selectedJdIds.length }} 个</small>
         </div>
-      </div>
+        <AnalyzedJobPicker
+          :items="completedJds"
+          :selected-ids="selectedJdIds"
+          :loading="loadingJds"
+          @toggle="toggleJd"
+        />
 
-      <div v-if="error" class="mb-4 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-600 dark:text-red-400">
-        {{ error }}
-      </div>
+        <div class="resume-submit-row">
+          <span>每个岗位会生成独立报告，可在结果页横向比较。</span>
+          <button type="button" class="btn btn--primary" :disabled="!canSubmit || submitting" @click="submitMatch">
+            <Sparkles :size="16" />{{ submitting ? '正在创建任务...' : submitLabel }}
+          </button>
+        </div>
+      </section>
 
-      <div v-if="selectedResume.analysis_result" class="animate-fade-in">
-        <!-- Strengths -->
-        <SectionCard icon="check" title="优点">
-          <div v-for="(s, i) in selectedResume.analysis_result.strengths" :key="i" class="mb-4 last:mb-0">
-            <div class="text-sm font-medium text-ink">{{ s.text }}</div>
-            <div class="text-sm text-ink-light mt-1">{{ s.detail }}</div>
+      <aside class="resume-history-panel">
+        <div class="resume-history-title">
+          <div><History :size="17" /><h2>最近匹配</h2></div>
+          <div class="history-actions">
+            <button v-if="managingHistory" type="button" @click="toggleSelectAllHistory">{{ selectedHistoryIds.length === history.length ? '取消全选' : '全选' }}</button>
+            <button type="button" :disabled="!history.length" @click="toggleManageHistory">{{ managingHistory ? '完成' : '管理' }}</button>
+            <button v-if="!managingHistory" type="button" :disabled="loadingHistory" @click="loadHistory">刷新</button>
           </div>
-        </SectionCard>
-
-        <!-- Weaknesses -->
-        <SectionCard icon="info" title="待改进项" class="mt-4">
-          <div v-for="(w, i) in selectedResume.analysis_result.weaknesses" :key="i" class="mb-4 last:mb-0">
-            <div class="text-sm font-medium text-ink">{{ w.text }}</div>
-            <div class="mt-1 px-3 py-2 bg-oat dark:bg-surface-alt rounded-lg text-sm text-ink-light">
-              <span class="text-xs font-medium text-primary mr-1">建议：</span>{{ w.suggestion }}
-            </div>
-          </div>
-        </SectionCard>
-
-        <!-- Suggestions -->
-        <SectionCard icon="plus" title="整体建议" class="mt-4">
-          <ul class="pl-5 m-0 text-sm text-ink-light leading-relaxed">
-            <li v-for="(s, i) in selectedResume.analysis_result.suggestions" :key="i" class="mb-2 marker:text-primary">{{ s }}</li>
-          </ul>
-        </SectionCard>
-      </div>
+        </div>
+        <ResumeMatchHistory
+          :items="history"
+          :loading="loadingHistory"
+          :managing="managingHistory"
+          :selected-ids="selectedHistoryIds"
+          @open="openHistory"
+          @delete="deleteTarget = { kind: 'match', item: $event }"
+          @toggle="toggleHistoryItem"
+        />
+        <button v-if="managingHistory" type="button" class="batch-delete-button" :disabled="!selectedHistoryIds.length || deleting" @click="deleteTarget = { kind: 'batch-match', ids: [...selectedHistoryIds] }"><Trash2 :size="14" />删除所选（{{ selectedHistoryIds.length }}）</button>
+      </aside>
     </div>
 
-    <LoadingOverlay
-      :active="loading"
-      :text="loadingText"
-      subtext="请稍候..."
+    <ConfirmDialog
+      :show="Boolean(deleteTarget)"
+      :title="deleteTarget?.kind === 'resume' ? '删除简历' : deleteTarget?.kind === 'batch-match' ? '批量删除匹配报告' : '删除匹配报告'"
+      :message="deleteTarget?.kind === 'resume'
+        ? `删除“${deleteTarget?.item?.file_name || '这份简历'}”后，相关匹配记录也会删除且无法恢复。`
+        : deleteTarget?.kind === 'batch-match'
+        ? `确定删除选中的 ${deleteTarget?.ids?.length || 0} 条匹配报告吗？删除后无法恢复。`
+        : `删除“${deleteTarget?.item?.result?.job?.title || '这份匹配报告'}”后无法恢复。`"
+      confirm-text="删除"
+      :loading="deleting"
+      @confirm="confirmDelete"
+      @cancel="deleteTarget = null"
     />
   </AnalysisLayout>
 </template>
+
+<style scoped>
+.resume-page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1.5rem; }
+.resume-page-head h1 { font-size:1.5rem; }
+.resume-page-head p { margin-top:.4rem; color:var(--color-ink-muted); font-size:.9rem; }
+.resume-head-mark { width:2.75rem; height:2.75rem; display:grid; place-items:center; flex:none; border-radius:var(--radius-md); color:var(--color-primary); background:var(--color-surface-alt); }
+.resume-input-grid { display:grid; grid-template-columns:minmax(0,1fr) 18rem; gap:1.25rem; align-items:start; }
+.resume-workbench { min-width:0; padding:1.5rem; border:1px solid var(--color-border); border-radius:var(--radius-lg); background:var(--color-white); box-shadow:var(--shadow-sm); }
+.resume-section-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
+.resume-section-head span { display:block; margin-bottom:.2rem; color:var(--color-primary); font-size:.68rem; font-weight:700; }
+.resume-section-head h2 { font-size:.95rem; }
+.resume-section-head small { color:var(--color-ink-muted); font-size:.72rem; }
+.resume-mode-switch { display:inline-flex; gap:.2rem; padding:.22rem; border-radius:var(--radius-sm); background:var(--color-surface); }
+.resume-mode-switch button { min-height:2rem; display:inline-flex; align-items:center; gap:.35rem; padding:0 .7rem; border-radius:6px; color:var(--color-ink-light); font-size:.75rem; font-weight:600; }
+.resume-mode-switch button.active { color:white; background:var(--color-primary); }
+.resume-upload-mode { display:grid; gap:.85rem; }
+.resume-upload-mode .btn { justify-self:end; }
+.resume-divider { height:1px; margin:1.4rem 0; background:var(--color-border-light); }
+.job-section-head { margin-bottom:.7rem; }
+.resume-submit-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-top:1.1rem; }
+.resume-submit-row > span { color:var(--color-ink-muted); font-size:.75rem; }
+.resume-history-panel { min-width:0; padding-left:1.25rem; border-left:1px solid var(--color-border-light); }
+.resume-history-title { display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:.8rem; }
+.resume-history-title > div:first-child { display:flex; align-items:center; gap:.5rem; color:var(--color-primary); }
+.resume-history-title h2 { font-size:.9rem; }
+.resume-history-title button { color:var(--color-ink-muted); font-size:.75rem; }
+.resume-history-title button:hover { color:var(--color-primary); }
+.history-actions { display:flex; align-items:center; gap:.45rem; }
+.batch-delete-button { width:100%; min-height:2.35rem; display:flex; align-items:center; justify-content:center; gap:.4rem; margin-top:.75rem; border-radius:var(--radius-sm); color:white; background:var(--color-accent); font-size:.75rem; font-weight:700; }
+.batch-delete-button:disabled { opacity:.45; cursor:not-allowed; }
+@media (max-width:900px) { .resume-input-grid { grid-template-columns:1fr; } .resume-history-panel { padding:1.25rem 0 0; border-left:0; border-top:1px solid var(--color-border-light); } }
+@media (max-width:620px) { .resume-workbench { padding:1rem; } .resume-section-head { align-items:flex-start; flex-direction:column; } .job-section-head { align-items:center; flex-direction:row; } .resume-mode-switch { width:100%; } .resume-mode-switch button { flex:1; justify-content:center; } .resume-submit-row { align-items:stretch; flex-direction:column; } .resume-submit-row .btn { justify-content:center; } }
+</style>

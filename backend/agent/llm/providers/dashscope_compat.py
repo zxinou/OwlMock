@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from agent.llm.providers.openai_compatible import OpenAICompatibleLLM
+from config.settings import settings
 
 
 class DashScopeCompatLLM(OpenAICompatibleLLM):
@@ -12,10 +13,11 @@ class DashScopeCompatLLM(OpenAICompatibleLLM):
         model: str = "qwen-max",
         temperature: float = 0.7,
         enable_thinking: bool = False,
+        base_url: str | None = None,
     ) -> None:
         super().__init__(
             api_key=api_key,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            base_url=base_url or settings.DASHSCOPE_BASE_URL,
             model=model,
             temperature=temperature,
         )
@@ -27,4 +29,3 @@ class DashScopeCompatLLM(OpenAICompatibleLLM):
         if self.enable_thinking:
             params["extra_body"] = {"enable_thinking": True}
         return params
-

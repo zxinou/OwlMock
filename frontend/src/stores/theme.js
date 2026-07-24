@@ -5,7 +5,7 @@ const state = reactive({
 })
 
 function init() {
-  const saved = localStorage.getItem('pawfolio-dark')
+  const saved = localStorage.getItem('owlmock-dark')
   if (saved !== null) {
     state.dark = saved === '1'
   } else {
@@ -23,7 +23,7 @@ function set(val) {
 
 watchEffect(() => {
   document.documentElement.classList.toggle('dark', state.dark)
-  localStorage.setItem('pawfolio-dark', state.dark ? '1' : '0')
+  localStorage.setItem('owlmock-dark', state.dark ? '1' : '0')
 })
 
 init()

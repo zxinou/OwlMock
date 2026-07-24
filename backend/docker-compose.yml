@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # FastAPI backend
   backend:
@@ -10,18 +8,21 @@ services:
       - "8000:8000"
     environment:
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - ZHIPU_BASE_URL=${ZHIPU_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
       - TRACER=${TRACER:-noop}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-${LANGFUSE_HOST:-http://langfuse-server:3000}}
-      - SQLITE_PATH=/app/data/app.db
-      - JSONL_ROOT=/app/data/sessions
+      - SQLITE_PATH=/app/runtime/app.db
+      - JSONL_ROOT=/app/runtime/sessions
+      - MEMORY_ROOT=/app/runtime/memory
+      - RESUME_ROOT=/app/runtime/resumes
+      - JD_UPLOAD_ROOT=/app/runtime/jd_uploads
+      - REPO_ROOT=/app/runtime/repo_cache
     volumes:
-      - ./data:/app/data
-    depends_on:
-      - langfuse-server
+      - backend-data:/app/runtime
     restart: unless-stopped
 
   # Langfuse (optional - for tracing)
@@ -53,4 +54,5 @@ services:
       - langfuse
 
 volumes:
+  backend-data:
   langfuse-db-data:

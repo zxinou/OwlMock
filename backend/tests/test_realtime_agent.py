@@ -119,12 +119,12 @@ def make_test_profile(
     return AgentProfile(
         id="test-interviewer",
         prompt_template="test.md",
-        llm=LLMConfig(provider="mimo", model="test"),
+        llm=LLMConfig(provider="dashscope", model="test"),
         tools=["save_real_question"],
         realtime=RealtimeConfig(
-            provider="openai_realtime",
-            model="gpt-4o-realtime-preview",
-            voice="alloy",
+            provider="dashscope_realtime",
+            model="qwen3.5-omni-flash-realtime",
+            voice="Cindy",
             vad_mode=vad_mode,
             max_session_minutes=max_session_minutes,
             midsummary=RealtimeMidSummaryConfig(
@@ -214,7 +214,6 @@ class TestRealtimeAgentBargeIn:
             ]
         )
         client = FakeClientWS()
-
         agent = RealtimeAgent(
             profile=profile,
             realtime_llm=MagicMock(),
@@ -300,7 +299,6 @@ class TestRealtimeAgentCostCap:
         mock_store.append_event = MagicMock()
 
         upstream = FakeRealtimeSession()
-        client = FakeClientWS()
 
         agent = RealtimeAgent(
             profile=profile,
@@ -319,7 +317,10 @@ class TestRealtimeAgentCostCap:
         agent._audio_seconds_used = 70.0  # > 60 seconds
 
         # Simulate response.done
-        event = ResponseDone(response_id="r1", usage={"audio_in_tokens": 100, "audio_out_tokens": 200})
+        event = ResponseDone(
+            response_id="r1",
+            usage={"audio_in_tokens": 100, "audio_out_tokens": 200},
+        )
         await agent._on_response_done(event)
 
         assert agent._closed is True
@@ -389,6 +390,7 @@ class TestRealtimeAgentPersistence:
             user_id="u1",
             session_id="s1",
         )
+        agent._response_authorized = True
 
         await agent._pump_upstream_to_client(upstream, client)
 
@@ -469,6 +471,62 @@ class TestRealtimeAgentPersistence:
             if c[0][2].type in (EventType.ASSISTANT_AUDIO_DELTA, EventType.ASSISTANT_AUDIO_DONE)
         ]
         assert len(audio_persisted) == 0
+
+    @pytest.mark.asyncio
+    async def test_response_done_notifies_client_that_answer_is_ready(self) -> None:
+        profile = make_test_profile(vad_mode="none")
+        mock_store = MagicMock()
+        mock_store.read_events.return_value = []
+        mock_store.append_event = MagicMock()
+        upstream = FakeRealtimeSession(events=[ResponseDone(response_id="r1", usage={})])
+        client = FakeClientWS()
+        agent = RealtimeAgent(
+            profile=profile,
+            realtime_llm=MagicMock(),
+            session_store=mock_store,
+            tools=make_test_tools(),
+            instructions="test",
+            subagent_provider=MagicMock(),
+            user_id="u1",
+            session_id="s1",
+        )
+        agent._response_authorized = True
+
+        await agent._pump_upstream_to_client(upstream, client)
+
+        ready_events = [
+            event for event in client.sent_events()
+            if event.type == EventType.STATE_CHANGED
+            and event.payload.get("state") == RealtimeAgentState.LISTENING.value
+        ]
+        assert len(ready_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_manual_mode_blocks_response_before_commit(self) -> None:
+        profile = make_test_profile(vad_mode="none")
+        upstream = FakeRealtimeSession(events=[
+            ResponseAudioDelta(item_id="unexpected", delta_b64="audio"),
+            ResponseDone(response_id="unexpected", usage={}),
+        ])
+        client = FakeClientWS()
+        agent = RealtimeAgent(
+            profile=profile,
+            realtime_llm=MagicMock(),
+            session_store=MagicMock(),
+            tools=make_test_tools(),
+            instructions="test",
+            subagent_provider=MagicMock(),
+            user_id="u1",
+            session_id="s1",
+        )
+
+        await agent._pump_upstream_to_client(upstream, client)
+
+        assert any(item.get("type") == "cancel_response" for item in upstream.sent)
+        assert not any(
+            event.type == EventType.ASSISTANT_AUDIO_DELTA
+            for event in client.sent_events()
+        )
 
 
 class TestRealtimeAgentErrorHandling:

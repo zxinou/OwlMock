@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from pydantic import BaseModel
@@ -58,8 +59,30 @@ async def save_repo_analysis(args: SaveRepoAnalysisArgs, ctx: ToolContext) -> To
             summary=f"Not found: {analysis_id}",
         )
 
+    try:
+        parsed = json.loads(result_json)
+    except json.JSONDecodeError:
+        parsed = None
+
+    payload_error = parsed.get("error") if isinstance(parsed, dict) else None
+    if isinstance(payload_error, str) and payload_error.strip():
+        analysis.result_json = result_json
+        analysis.status = "failed"
+        analysis.stage = "failed"
+        analysis.progress = 0.0
+        analysis.error = payload_error.strip()
+        analysis.analyzed_at = datetime.now(UTC)
+        await db.commit()
+        return ToolResult.err(
+            code="analysis_failed",
+            message=payload_error.strip(),
+            summary="Analysis failed",
+        )
+
     analysis.result_json = result_json
     analysis.status = "done"
+    analysis.stage = "completed"
+    analysis.progress = 1.0
     analysis.analyzed_at = datetime.now(UTC)
     await db.commit()
 

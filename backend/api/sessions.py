@@ -4,7 +4,7 @@ import json
 import logging
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from api.schemas import (
     CreateSessionRequest,
@@ -89,6 +89,18 @@ async def get_session(
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(
+    session_id: str,
+    session_service: SessionService = Depends(get_session_service),
+):
+    """Delete a session and its persisted events."""
+    deleted = await session_service.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return Response(status_code=204)
 
 
 @router.get("/sessions/{session_id}/events")

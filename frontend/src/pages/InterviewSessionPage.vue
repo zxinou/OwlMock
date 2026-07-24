@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
-import CapybaraLogo from '@/components/common/CapybaraLogo.vue'
+import OwlLogo from '@/components/common/OwlLogo.vue'
 import TextMode from '@/components/interview/TextMode.vue'
 import VoiceMode from '@/components/interview/VoiceMode.vue'
 import { INTERVIEW_TYPES, PROFILE_TO_TYPE, TYPE_TO_PROFILE } from '@/data/interview.js'
@@ -146,7 +146,7 @@ onUnmounted(() => {
           </svg>
         </router-link>
         <div class="interview-header__title">
-          <CapybaraLogo :size="24" />
+          <OwlLogo :size="24" />
           <span>{{ INTERVIEW_TYPES[interviewType] || '模拟面试' }}</span>
           <span v-if="mode === 'voice'" class="text-sm text-ink-muted">（语音模式）</span>
         </div>
@@ -494,11 +494,11 @@ onUnmounted(() => {
   background: var(--color-primary-dark);
 }
 
-:global(.dark) .interview-header {
+html.dark .interview-header {
   background: var(--color-surface);
 }
 
-:global(.dark) .dialog {
+html.dark .dialog {
   background: var(--color-surface);
 }
 

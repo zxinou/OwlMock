@@ -120,6 +120,22 @@ class SessionService:
             total=total,
         )
 
+    async def delete_session(self, session_id: str) -> bool:
+        """Delete a session and its persisted event history."""
+        result = await self.db.execute(
+            select(Session).where(Session.id == session_id)
+        )
+        session = result.scalar_one_or_none()
+
+        if session is None:
+            return False
+
+        user_id = session.user_id
+        await self.db.delete(session)
+        await self.db.commit()
+        self.store.delete(user_id, session_id)
+        return True
+
     async def append_event(self, session_id: str, event: FrontendEvent) -> None:
         """Append an event to a session and update metadata."""
         # Get session to find user_id

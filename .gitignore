@@ -16,6 +16,9 @@ frontend-vue-old
 .claude
 .impeccable
 openspec
+.playwright-cli/
+.superpowers/
+output/
 
 # Python
 __pycache__/
@@ -27,16 +30,27 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Secrets
 .env
+.env.*
+!.env.example
+!backend/.env.example
 
 # Database & session data
-docs
+docs/superpowers/
+backend/docs/
 *.db
 *.sqlite
 *.sqlite3
 backend/storage/db/*.db
+
+# Runtime analysis workspaces
+analysis_cache/
+repo_cache/
 
 # Backend runtime storage (keep source .py and .gitkeep)
 backend/storage/repo/*

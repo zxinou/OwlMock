@@ -73,8 +73,8 @@ function openPicker() {
   <!-- File display (file selected) -->
   <div v-else class="flex items-center gap-3 px-5 py-4 bg-surface dark:bg-surface-alt border border-border-light dark:border-border rounded-xl">
     <slot name="file-icon">
-      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-[#fce4dc] to-[#f5d8cc] flex items-center justify-center shrink-0">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="2" width="14" height="16" rx="2" stroke="#E8937A" stroke-width="1.5"/><line x1="6" y1="7" x2="14" y2="7" stroke="#E8937A" stroke-width="1" opacity="0.5"/><line x1="6" y1="10" x2="11" y2="10" stroke="#E8937A" stroke-width="1" opacity="0.5"/></svg>
+      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-[#f7ddd6] to-[#efc7bb] flex items-center justify-center shrink-0">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="2" width="14" height="16" rx="2" stroke="#D86C57" stroke-width="1.5"/><line x1="6" y1="7" x2="14" y2="7" stroke="#D86C57" stroke-width="1" opacity="0.5"/><line x1="6" y1="10" x2="11" y2="10" stroke="#D86C57" stroke-width="1" opacity="0.5"/></svg>
       </div>
     </slot>
     <div class="flex-1 min-w-0">

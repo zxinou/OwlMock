@@ -1,7 +1,4 @@
-"""Regression tests for LLM provider subclass-specific behaviors.
-
-Tests for DeepSeek-R1 reasoning_content and DashScope enable_thinking.
-"""
+"""Regression tests for active LLM provider subclass behaviors."""
 
 from __future__ import annotations
 
@@ -10,57 +7,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agent.llm.events import (
-    Done,
     TextDelta,
     ThinkingDelta,
-    Usage,
 )
 from agent.llm.providers.dashscope_compat import DashScopeCompatLLM
-from agent.llm.providers.deepseek import DeepSeekLLM
+from agent.llm.providers.zhipu import ZhipuLLM
+from config.settings import settings
 from tests.test_openai_compatible import MockAsyncIterator, make_mock_chunk
-
-
-class TestDeepSeekLLM:
-    """Test DeepSeek-specific behaviors."""
-
-    @pytest.fixture
-    def llm(self) -> DeepSeekLLM:
-        """Create a DeepSeekLLM instance with a mock client."""
-        llm = DeepSeekLLM(api_key="test-key", model="deepseek-reasoner")
-        return llm
-
-    @pytest.mark.asyncio
-    async def test_reasoning_content(self, llm: DeepSeekLLM) -> None:
-        """Test: DeepSeek-R1 reasoning_content is mapped to ThinkingDelta."""
-        usage_mock = MagicMock(prompt_tokens=10, completion_tokens=5, total_tokens=15)
-
-        chunks = [
-            make_mock_chunk(reasoning_content="Let me reason step by step..."),
-            make_mock_chunk(reasoning_content="Therefore, the answer is"),
-            make_mock_chunk(content="42"),
-            make_mock_chunk(content="", finish_reason="stop", usage=usage_mock),
-        ]
-
-        llm.client.chat.completions.create = AsyncMock(return_value=MockAsyncIterator(chunks))
-
-        events = []
-        async for event in llm.stream([{"role": "user", "content": "What is 6x7?"}]):
-            events.append(event)
-
-        assert len(events) == 5
-        assert isinstance(events[0], ThinkingDelta) and events[0].delta == "Let me reason step by step..."
-        assert isinstance(events[1], ThinkingDelta) and events[1].delta == "Therefore, the answer is"
-        assert isinstance(events[2], TextDelta) and events[2].delta == "42"
-        assert isinstance(events[3], Usage)
-        assert isinstance(events[4], Done)
-
-    def test_model_name(self, llm: DeepSeekLLM) -> None:
-        """Test: get_model_name returns the configured model."""
-        assert llm.get_model_name() == "deepseek-reasoner"
-
-    def test_base_url(self, llm: DeepSeekLLM) -> None:
-        """Test: base_url is set to DeepSeek API."""
-        assert str(llm.client.base_url).rstrip("/") == "https://api.deepseek.com"
 
 
 class TestDashScopeCompatLLM:
@@ -69,7 +22,11 @@ class TestDashScopeCompatLLM:
     @pytest.fixture
     def llm(self) -> DashScopeCompatLLM:
         """Create a DashScopeCompatLLM instance with a mock client."""
-        llm = DashScopeCompatLLM(api_key="test-key", model="qwen-max")
+        llm = DashScopeCompatLLM(
+            api_key="test-key",
+            model="qwen-max",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
         return llm
 
     @pytest.fixture
@@ -79,6 +36,7 @@ class TestDashScopeCompatLLM:
             api_key="test-key",
             model="qwen-max",
             enable_thinking=True,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
         return llm
 
@@ -122,3 +80,33 @@ class TestDashScopeCompatLLM:
         """Test: extra params include enable_thinking when enabled."""
         params = llm_with_thinking._extra_request_params()
         assert params == {"extra_body": {"enable_thinking": True}}
+
+    def test_base_url_uses_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test: base_url can be configured through settings."""
+        monkeypatch.setattr(
+            settings,
+            "DASHSCOPE_BASE_URL",
+            "https://workspace.example.com/compatible-mode/v1",
+        )
+
+        llm = DashScopeCompatLLM(api_key="test-key", model="qwen-max")
+
+        assert str(llm.client.base_url).rstrip("/") == "https://workspace.example.com/compatible-mode/v1"
+
+
+class TestZhipuLLM:
+    """Test Zhipu provider behavior."""
+
+    @pytest.fixture
+    def llm(self) -> ZhipuLLM:
+        """Create a ZhipuLLM instance with a mock client."""
+        llm = ZhipuLLM(api_key="test-key", model="glm-4.6v-flash")
+        return llm
+
+    def test_model_name(self, llm: ZhipuLLM) -> None:
+        """Test: get_model_name returns the configured model."""
+        assert llm.get_model_name() == "glm-4.6v-flash"
+
+    def test_base_url(self, llm: ZhipuLLM) -> None:
+        """Test: base_url is set to Zhipu OpenAI-compatible API."""
+        assert str(llm.client.base_url).rstrip("/") == "https://open.bigmodel.cn/api/paas/v4"

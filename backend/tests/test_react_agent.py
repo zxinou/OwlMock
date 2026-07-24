@@ -40,6 +40,29 @@ async def sample_tool(args: TestArgs, ctx: ToolContext) -> ToolResult:
     return ToolResult.ok(data={"result": f"Processed: {args.input}"})
 
 
+@tool
+async def clone_repo(args: TestArgs, ctx: ToolContext) -> ToolResult:
+    """A fake clone tool for context propagation tests."""
+    return ToolResult.ok(
+        data={
+            "repo_path": "C:/tmp/repo-cache/source",
+            "repo_url": "https://github.com/o/r",
+            "status": "ready",
+        }
+    )
+
+
+@tool
+async def capture_repo_context(args: TestArgs, ctx: ToolContext) -> ToolResult:
+    """Capture repository context passed into the next tool."""
+    return ToolResult.ok(
+        data={
+            "current_repo_path": ctx.current_repo_path,
+            "repo_url": ctx.repo_url,
+        }
+    )
+
+
 class FakeLLM(BaseLLM):
     """Fake LLM that yields scripted events."""
 
@@ -419,3 +442,172 @@ class TestReActAgent:
         error_events = [e for e in events if e.type == EventType.ERROR]
         assert len(error_events) > 0
         assert error_events[0].payload["code"] == "429"
+
+    def test_fallback_quota_error_message_names_fallback_provider(
+        self, profile, session_store, skill_loader
+    ) -> None:
+        """Fallback provider errors must not be described as primary model quota errors."""
+        profile.llm.fallback = LLMConfig(provider="zhipu", model="glm-4.6v-flash")
+        agent = ReActAgent(
+            profile=profile,
+            llm=FakeLLM([]),
+            context_builder=ContextBuilder(skill_loader),
+            compactor=ContextCompactor(FakeLLM([])),
+            tool_executor=ToolExecutor(),
+            tools={},
+            session_store=session_store,
+            user_id="user1",
+            session_id="session1",
+        )
+
+        message = agent._safe_provider_error_message(
+            ProviderError(
+                message="Allocated quota exceeded",
+                code="429",
+                retryable=True,
+            ),
+            provider="zhipu",
+            is_fallback=True,
+        )
+
+        assert "智谱" in message
+        assert "主模型" not in message
+        assert "备用模型" not in message
+
+    @pytest.mark.asyncio
+    async def test_retryable_primary_error_streams_from_fallback(
+        self, profile, session_store, skill_loader, monkeypatch
+    ) -> None:
+        """Retryable Qwen errors should stream a successful Zhipu fallback response."""
+        profile.llm.fallback = LLMConfig(provider="zhipu", model="glm-4.6v-flash")
+
+        class Primary429LLM(BaseLLM):
+            async def stream(self, messages, tools=None) -> AsyncIterator[LLMEvent]:
+                yield ProviderError(
+                    message="Allocated quota exceeded",
+                    code="429",
+                    retryable=True,
+                )
+                yield Done(stop_reason="error")
+
+            def get_model_name(self) -> str:
+                return "qwen-test"
+
+        class FallbackOKLLM(BaseLLM):
+            async def stream(self, messages, tools=None) -> AsyncIterator[LLMEvent]:
+                yield TextDelta(delta="fallback ok")
+                yield Done(stop_reason="end_turn")
+
+            def get_model_name(self) -> str:
+                return "glm-test"
+
+        monkeypatch.setattr(
+            "agent.llm.factory.LLMFactory.create",
+            lambda provider, config: FallbackOKLLM(),
+        )
+
+        session_store.create("user1", "fallback-session", "test-agent")
+        agent = ReActAgent(
+            profile=profile,
+            llm=Primary429LLM(),
+            context_builder=ContextBuilder(skill_loader),
+            compactor=ContextCompactor(Primary429LLM()),
+            tool_executor=ToolExecutor(),
+            tools={},
+            session_store=session_store,
+            user_id="user1",
+            session_id="fallback-session",
+        )
+
+        events = []
+        async for event in agent.run("hi"):
+            events.append(event)
+
+        assert not [e for e in events if e.type == EventType.ERROR]
+        text_done = [e for e in events if e.type == EventType.ASSISTANT_TEXT_DONE]
+        assert text_done
+        assert text_done[0].payload["text"] == "fallback ok"
+
+    @pytest.mark.asyncio
+    async def test_clone_repo_result_updates_repo_path_and_url(
+        self, session_store, skill_loader
+    ) -> None:
+        """clone_repo result is propagated to subsequent tool contexts."""
+        profile = AgentProfile(
+            id="repo-agent",
+            prompt_template="nonexistent.md",
+            llm=LLMConfig(provider="test", model="test"),
+            tools=["clone_repo", "capture_repo_context"],
+            skills=[],
+            context=ContextConfig(max_history_tokens=8000, compact_threshold=6000),
+            policy=PolicyConfig(max_steps=3, parallel_tools=1, tool_timeout=30.0),
+        )
+
+        class RepoContextLLM(BaseLLM):
+            def __init__(self) -> None:
+                self.round = 0
+
+            async def stream(
+                self, messages: list[dict], tools: list[dict] | None = None
+            ) -> AsyncIterator[LLMEvent]:
+                self.round += 1
+                if self.round == 1:
+                    yield ToolCallStart(tool_call_id="clone", tool_name="clone_repo")
+                    yield ToolCallEnd(
+                        tool_call_id="clone",
+                        tool_name="clone_repo",
+                        args={"input": "clone"},
+                    )
+                    yield Done(stop_reason="tool_use")
+                    return
+                if self.round == 2:
+                    yield ToolCallStart(
+                        tool_call_id="capture",
+                        tool_name="capture_repo_context",
+                    )
+                    yield ToolCallEnd(
+                        tool_call_id="capture",
+                        tool_name="capture_repo_context",
+                        args={"input": "capture"},
+                    )
+                    yield Done(stop_reason="tool_use")
+                    return
+                yield TextDelta(delta="done")
+                yield Done(stop_reason="end_turn")
+
+            def get_model_name(self) -> str:
+                return "repo-context-fake"
+
+        llm = RepoContextLLM()
+        context_builder = ContextBuilder(skill_loader)
+        compactor = ContextCompactor(llm)
+        tool_executor = ToolExecutor()
+        registry = ToolRegistry(tools=[clone_repo, capture_repo_context])
+        tools = {meta.name: meta for meta in registry.all()}
+
+        session_store.create("user1", "repo-session", "repo-agent")
+
+        agent = ReActAgent(
+            profile=profile,
+            llm=llm,
+            context_builder=context_builder,
+            compactor=compactor,
+            tool_executor=tool_executor,
+            tools=tools,
+            session_store=session_store,
+            user_id="user1",
+            session_id="repo-session",
+        )
+
+        events = []
+        async for event in agent.run("analyze"):
+            events.append(event)
+
+        capture_results = [
+            e for e in events
+            if e.type == EventType.TOOL_RESULT
+            and e.payload["tool_name"] == "capture_repo_context"
+        ]
+        assert capture_results
+        assert capture_results[0].payload["data"]["current_repo_path"] == "C:/tmp/repo-cache/source"
+        assert capture_results[0].payload["data"]["repo_url"] == "https://github.com/o/r"

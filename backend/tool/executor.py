@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -9,6 +11,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from tool.base import ToolContext, ToolMeta, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -72,7 +76,9 @@ class ToolExecutor:
             ctx = ctx_factory(call)
 
             async with semaphore:
+                start = time.time()
                 try:
+                    logger.info("[tool] call start %s", call.tool_name)
                     # Create args model instance
                     args = meta.args_model(**call.args)
 
@@ -81,21 +87,42 @@ class ToolExecutor:
                         meta.fn(args, ctx),
                         timeout=self.default_timeout,
                     )
+                    logger.info(
+                        "[tool] call end %s %.2fs status=%s",
+                        call.tool_name,
+                        time.time() - start,
+                        result.status,
+                    )
                     return result
 
                 except TimeoutError:
+                    logger.warning(
+                        "[tool] call timeout %s %.2fs",
+                        call.tool_name,
+                        time.time() - start,
+                    )
                     return ToolResult.err(
                         code="timeout",
                         message=f"Tool {call.tool_name} timed out after {self.default_timeout}s",
                         summary=f"Timeout: {call.tool_name}",
                     )
                 except asyncio.CancelledError:
+                    logger.info(
+                        "[tool] call cancelled %s %.2fs",
+                        call.tool_name,
+                        time.time() - start,
+                    )
                     return ToolResult.err(
                         code="cancelled",
                         message=f"Tool {call.tool_name} was cancelled",
                         summary=f"Cancelled: {call.tool_name}",
                     )
                 except ValidationError:
+                    logger.warning(
+                        "[tool] call invalid args %s %.2fs",
+                        call.tool_name,
+                        time.time() - start,
+                    )
                     # LLM passed invalid/empty args — return full schema as hint
                     schema = meta.args_model.model_json_schema()
                     props = schema.get("properties", {})
@@ -122,6 +149,11 @@ class ToolExecutor:
                         summary=f"Missing args for {call.tool_name}",
                     )
                 except Exception as e:
+                    logger.exception(
+                        "[tool] call error %s %.2fs",
+                        call.tool_name,
+                        time.time() - start,
+                    )
                     import traceback
                     tb = traceback.format_exc()
                     return ToolResult.err(
