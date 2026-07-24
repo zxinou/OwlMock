@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock
 
@@ -527,6 +528,66 @@ class TestRealtimeAgentPersistence:
             event.type == EventType.ASSISTANT_AUDIO_DELTA
             for event in client.sent_events()
         )
+
+    @pytest.mark.asyncio
+    async def test_manual_turn_forwards_only_one_assistant_item(self) -> None:
+        profile = make_test_profile(vad_mode="none")
+        upstream = FakeRealtimeSession(events=[
+            ResponseAudioTranscriptDone(item_id="answer-1", text="第一个回答"),
+            ResponseAudioTranscriptDone(item_id="answer-2", text="重复回答"),
+            ResponseDone(response_id="response-1", usage={}),
+        ])
+        client = FakeClientWS()
+        store = MagicMock()
+        store.append_event = MagicMock()
+        agent = RealtimeAgent(
+            profile=profile,
+            realtime_llm=MagicMock(),
+            session_store=store,
+            tools=make_test_tools(),
+            instructions="test",
+            subagent_provider=MagicMock(),
+            user_id="u1",
+            session_id="s1",
+        )
+        agent._response_authorized = True
+
+        await agent._pump_upstream_to_client(upstream, client)
+
+        answers = [
+            event for event in client.sent_events()
+            if event.type == EventType.ASSISTANT_TRANSCRIPT_DONE
+        ]
+        assert [event.payload["text"] for event in answers] == ["第一个回答"]
+
+    @pytest.mark.asyncio
+    async def test_manual_turn_ignores_duplicate_commit_while_processing(self) -> None:
+        profile = make_test_profile(vad_mode="none")
+        upstream = FakeRealtimeSession()
+        client = FakeClientWS(messages=[
+            json.dumps({"type": "control.commit", "payload": {}}),
+            json.dumps({"type": "control.commit", "payload": {}}),
+        ])
+        agent = RealtimeAgent(
+            profile=profile,
+            realtime_llm=MagicMock(),
+            session_store=MagicMock(),
+            tools=make_test_tools(),
+            instructions="test",
+            subagent_provider=MagicMock(),
+            user_id="u1",
+            session_id="s1",
+        )
+
+        task = asyncio.create_task(agent._pump_client_to_upstream(client, upstream))
+        while client._index < 2:
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert [item["type"] for item in upstream.sent].count("commit_audio") == 1
+        assert [item["type"] for item in upstream.sent].count("create_response") == 1
 
 
 class TestRealtimeAgentErrorHandling:
