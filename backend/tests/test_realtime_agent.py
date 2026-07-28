@@ -12,7 +12,9 @@ import pytest
 from agent.llm.realtime.base import RealtimeSession
 from agent.llm.realtime.events import (
     ConversationItemInputAudioTranscriptionCompleted,
+    ConversationItemInputAudioTranscriptionDelta,
     InputAudioBufferSpeechStarted,
+    InputAudioBufferSpeechStopped,
     RealtimeError,
     RealtimeUpstreamEvent,
     ResponseAudioDelta,
@@ -139,6 +141,19 @@ def make_test_profile(
     )
 
 
+def make_agent(profile: AgentProfile, store: MagicMock | None = None) -> RealtimeAgent:
+    return RealtimeAgent(
+        profile=profile,
+        realtime_llm=MagicMock(),
+        session_store=store or MagicMock(),
+        tools=make_test_tools(),
+        instructions="test",
+        subagent_provider=MagicMock(),
+        user_id="u1",
+        session_id="s1",
+    )
+
+
 def make_test_tools() -> dict[str, ToolMeta]:
     """Create minimal test tools."""
     from pydantic import BaseModel
@@ -201,6 +216,32 @@ class TestRealtimeAgentInit:
         )
         assert agent._max_seconds == 30 * 60
 
+    def test_hybrid_vad_config_includes_silence_and_prefix_padding(self) -> None:
+        profile = make_test_profile(vad_mode="hybrid")
+        profile.realtime.vad_silence_duration_ms = 1800
+        profile.realtime.vad_prefix_padding_ms = 300
+
+        agent = make_agent(profile)
+
+        assert agent._build_vad_config() == {
+            "type": "server_vad",
+            "threshold": 0.5,
+            "silence_duration_ms": 1800,
+            "prefix_padding_ms": 300,
+        }
+
+    def test_session_capabilities_describe_hybrid_turns(self) -> None:
+        profile = make_test_profile(vad_mode="hybrid")
+        profile.realtime.vad_silence_duration_ms = 1800
+
+        agent = make_agent(profile)
+
+        assert agent._get_voice_capabilities() == {
+            "turn_mode": "hybrid",
+            "supports_interrupt": True,
+            "vad_silence_duration_ms": 1800,
+        }
+
 
 class TestRealtimeAgentBargeIn:
     """Tests for barge-in (interrupt) handling."""
@@ -234,8 +275,111 @@ class TestRealtimeAgentBargeIn:
         events = client.sent_events()
         interrupted = [e for e in events if e.type == EventType.AI_INTERRUPTED]
         assert len(interrupted) >= 1
+        assert interrupted[0].payload["item_id"] == "i1"
         # Should have called cancel_response
         assert any(s.get("type") == "cancel_response" for s in upstream.sent)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_response_does_not_finish_active_user_speech(self) -> None:
+        profile = make_test_profile(vad_mode="hybrid")
+        upstream = FakeRealtimeSession(events=[
+            ResponseAudioDelta(item_id="assistant-1", delta_b64="audio"),
+            InputAudioBufferSpeechStarted(item_id="user-1"),
+            ResponseDone(response_id="response-1", status="cancelled", usage={}),
+        ])
+        client = FakeClientWS()
+        agent = make_agent(profile)
+
+        await agent._pump_upstream_to_client(upstream, client)
+
+        listening_events = [
+            event for event in client.sent_events()
+            if event.type == EventType.STATE_CHANGED
+            and event.payload.get("state") == RealtimeAgentState.LISTENING.value
+        ]
+        assert listening_events == []
+        assert agent._state == RealtimeAgentState.LISTENING
+
+    @pytest.mark.asyncio
+    async def test_hybrid_speech_events_are_forwarded_and_stop_enters_thinking(self) -> None:
+        profile = make_test_profile(vad_mode="hybrid")
+        upstream = FakeRealtimeSession(events=[
+            InputAudioBufferSpeechStarted(item_id="user-1"),
+            InputAudioBufferSpeechStopped(item_id="user-1"),
+        ])
+        client = FakeClientWS()
+        agent = make_agent(profile)
+
+        await agent._pump_upstream_to_client(upstream, client)
+
+        events = client.sent_events()
+        assert [event.type for event in events] == [
+            EventType.USER_SPEECH_STARTED,
+            EventType.USER_SPEECH_STOPPED,
+        ]
+        assert agent._state == RealtimeAgentState.THINKING
+        assert agent._input_turn_submitted is True
+
+    @pytest.mark.asyncio
+    async def test_user_transcript_delta_is_forwarded_but_not_persisted(self) -> None:
+        profile = make_test_profile(vad_mode="hybrid")
+        store = MagicMock()
+        upstream = FakeRealtimeSession(events=[
+            ConversationItemInputAudioTranscriptionDelta(
+                item_id="user-1", transcript="我负责了"
+            ),
+        ])
+        client = FakeClientWS()
+        agent = make_agent(profile, store)
+
+        await agent._pump_upstream_to_client(upstream, client)
+
+        events = client.sent_events()
+        assert len(events) == 1
+        assert events[0].type == EventType.USER_TRANSCRIPT_DELTA
+        assert events[0].payload == {"item_id": "user-1", "text": "我负责了"}
+        store.append_event.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_hybrid_manual_commit_is_ignored_after_server_vad_stops(self) -> None:
+        profile = make_test_profile(vad_mode="hybrid")
+        upstream = FakeRealtimeSession()
+        client = FakeClientWS(messages=[
+            json.dumps({"type": "control.commit", "payload": {}}),
+        ])
+        agent = make_agent(profile)
+        agent._input_turn_submitted = True
+
+        task = asyncio.create_task(agent._pump_client_to_upstream(client, upstream))
+        while client._index < 1:
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert not any(item["type"] == "commit_audio" for item in upstream.sent)
+        assert not any(item["type"] == "create_response" for item in upstream.sent)
+
+    @pytest.mark.asyncio
+    async def test_hybrid_turn_ignores_second_response_after_completion(self) -> None:
+        profile = make_test_profile(vad_mode="hybrid")
+        upstream = FakeRealtimeSession(events=[
+            ResponseAudioTranscriptDone(item_id="answer-1", text="第一个回答"),
+            ResponseDone(response_id="response-1", status="completed", usage={}),
+            ResponseAudioTranscriptDone(item_id="answer-2", text="重复回答"),
+            ResponseDone(response_id="response-2", status="completed", usage={}),
+        ])
+        client = FakeClientWS()
+        agent = make_agent(profile)
+
+        await agent._pump_upstream_to_client(upstream, client)
+
+        answers = [
+            event.payload["text"]
+            for event in client.sent_events()
+            if event.type == EventType.ASSISTANT_TRANSCRIPT_DONE
+        ]
+        assert answers == ["第一个回答"]
 
 
 class TestRealtimeAgentFunctionCall:

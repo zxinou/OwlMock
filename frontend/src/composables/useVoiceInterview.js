@@ -5,6 +5,8 @@ import { PcmPlayer, PcmStreamCapture } from '@/utils/voiceAudio.js'
 
 const CONNECT_TIMEOUT_MS = 12000
 const SUBMIT_TIMEOUT_MS = 35000
+const SPEECH_CONFIRM_FRAMES = 2
+const PREBUFFER_CHUNKS = 4
 
 export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) {
   const connected = ref(false)
@@ -17,6 +19,9 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
   const liveAiText = ref('')
   const waveformActive = ref(false)
   const answerState = ref('waiting')
+  const interactionState = ref('waiting')
+  const liveUserText = ref('')
+  const isMuted = ref(false)
 
   let ws = null
   let capture = null
@@ -27,6 +32,13 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
   let connectionTimer = null
   let submitTimer = null
   let audioChunksSent = 0
+  let turnMode = 'none'
+  let supportsInterrupt = false
+  let activeFrames = 0
+  let speechUploadActive = false
+  let activeAssistantItemId = ''
+  const prebuffer = []
+  const interruptedAssistantItems = new Set()
 
   function formatVoiceError(payload) {
     const code = payload?.code || ''
@@ -64,6 +76,41 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
     audioChunksSent = 0
   }
 
+  function resetSpeechGate() {
+    activeFrames = 0
+    speechUploadActive = false
+    prebuffer.length = 0
+    waveformActive.value = false
+  }
+
+  function sendAudio(audio) {
+    if (!audio || isMuted.value || isPaused || ws?.readyState !== WebSocket.OPEN) return false
+    if (!send({ type: 'user.audio.chunk', payload: { audio } })) return false
+    audioChunksSent += 1
+    return true
+  }
+
+  function interruptAssistant() {
+    if (!supportsInterrupt || !avatarSpeaking.value || !activeAssistantItemId) return
+    interruptedAssistantItems.add(activeAssistantItemId)
+    player?.stop(activeAssistantItemId)
+    send({ type: 'control.interrupt', payload: { item_id: activeAssistantItemId } })
+    avatarSpeaking.value = false
+    liveAiText.value = ''
+    interactionState.value = 'interrupted'
+  }
+
+  function beginSpeechUpload() {
+    if (speechUploadActive || isMuted.value || isPaused) return
+    interruptAssistant()
+    speechUploadActive = true
+    resetRecordingEvidence()
+    answerState.value = 'recording'
+    interactionState.value = 'speech_detected'
+    hintText.value = '正在聆听，停顿后将自动提交'
+    for (const chunk of prebuffer.splice(0)) sendAudio(chunk)
+  }
+
   function startSubmitTimer() {
     clearSubmitTimer()
     submitTimer = setTimeout(() => {
@@ -96,14 +143,18 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
       capture = new PcmStreamCapture({
         sampleRate: inputSampleRate,
         onChunk: (audio) => {
-          if (!isPaused && answerState.value === 'recording' && ws?.readyState === WebSocket.OPEN) {
-            if (send({ type: 'user.audio.chunk', payload: { audio } })) {
-              audioChunksSent += 1
-            }
+          if (isPaused || isMuted.value || !connected.value) return
+          if (speechUploadActive) {
+            sendAudio(audio)
+            return
           }
+          prebuffer.push(audio)
+          if (prebuffer.length > PREBUFFER_CHUNKS) prebuffer.shift()
+          if (activeFrames >= SPEECH_CONFIRM_FRAMES) beginSpeechUpload()
         },
         onActive: (active) => {
-          waveformActive.value = active && answerState.value === 'recording'
+          activeFrames = active ? activeFrames + 1 : 0
+          waveformActive.value = active && !isMuted.value
         },
       })
       await capture.start()
@@ -122,18 +173,16 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
     capture = null
     isListening.value = false
     waveformActive.value = false
-  }
-
-  function suspendCapture() {
-    isListening.value = false
-    waveformActive.value = false
+    resetSpeechGate()
   }
 
   function prepareFirstTurn() {
     const last = transcriptEntries.value.at(-1)
     if (last?.label === '猫头鹰面试官') {
       answerState.value = 'ready'
-      hintText.value = '准备好后，点击麦克风开始回答'
+      interactionState.value = turnMode === 'hybrid' ? 'listening' : 'waiting'
+      hintText.value = turnMode === 'hybrid' ? '请直接开始回答' : '准备好后，点击麦克风开始回答'
+      if (turnMode === 'hybrid') startCapture()
       return
     }
     answerState.value = 'waiting'
@@ -150,8 +199,8 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
   function beginAssistantTurn() {
     clearSubmitTimer()
     error.value = null
-    suspendCapture()
     answerState.value = 'waiting'
+    interactionState.value = 'speaking'
     hintText.value = '请听面试官提问'
     avatarSpeaking.value = true
     waveformActive.value = false
@@ -161,8 +210,11 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
     clearSubmitTimer()
     avatarSpeaking.value = false
     if (!isPaused && connected.value) {
-      answerState.value = 'ready'
-      hintText.value = '准备好后，点击麦克风开始回答'
+      resetSpeechGate()
+      answerState.value = turnMode === 'hybrid' ? 'recording' : 'ready'
+      interactionState.value = turnMode === 'hybrid' ? 'listening' : 'waiting'
+      hintText.value = turnMode === 'hybrid' ? '请直接开始回答，停顿后会自动提交' : '准备好后，点击麦克风开始回答'
+      if (turnMode === 'hybrid') startCapture()
     }
   }
 
@@ -171,33 +223,64 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
       case 'session.started':
         inputSampleRate = Number(data.payload?.audio?.input_sample_rate) || inputSampleRate
         outputSampleRate = Number(data.payload?.audio?.output_sample_rate) || outputSampleRate
+        turnMode = data.payload?.turn_mode || 'none'
+        supportsInterrupt = Boolean(data.payload?.supports_interrupt)
+        interactionState.value = 'waiting'
+        if (turnMode === 'hybrid') startCapture()
         prepareFirstTurn()
+        break
+      case 'user.speech.started':
+        interactionState.value = 'speech_detected'
+        answerState.value = 'recording'
+        break
+      case 'user.speech.stopped':
+        speechUploadActive = false
+        prebuffer.length = 0
+        interactionState.value = 'thinking'
+        answerState.value = 'submitting'
+        hintText.value = '正在整理你的回答'
+        startSubmitTimer()
+        break
+      case 'user.transcript.delta':
+        liveUserText.value = data.payload?.text || ''
         break
       case 'user.transcript':
         appendTranscript('你', data.payload?.text || '')
+        liveUserText.value = ''
         break
       case 'assistant.transcript.delta':
+        activeAssistantItemId = data.payload?.item_id || activeAssistantItemId
+        if (interruptedAssistantItems.has(activeAssistantItemId)) break
         beginAssistantTurn()
         liveAiText.value += data.payload?.text ?? ''
         break
       case 'assistant.transcript.done': {
+        activeAssistantItemId = data.payload?.item_id || activeAssistantItemId
+        if (interruptedAssistantItems.has(activeAssistantItemId)) break
         const text = data.payload?.text || liveAiText.value
         liveAiText.value = ''
         appendTranscript('猫头鹰面试官', text)
         break
       }
       case 'assistant.audio.delta':
+        activeAssistantItemId = data.payload?.item_id || activeAssistantItemId
+        if (interruptedAssistantItems.has(activeAssistantItemId)) break
         beginAssistantTurn()
-        if (!player) player = new PcmPlayer(outputSampleRate)
-        player.playBase64(data.payload?.audio)
+        if (!player) player = new PcmPlayer(outputSampleRate, {
+          onIdle: () => {
+            if (interactionState.value === 'speaking') avatarSpeaking.value = false
+          },
+        })
+        player.playBase64(data.payload?.audio, activeAssistantItemId)
         break
       case 'assistant.audio.done':
-        avatarSpeaking.value = false
+        if (player?.isIdle()) avatarSpeaking.value = false
         break
       case 'ai.interrupted':
-        player?.stop()
+        if (data.payload?.item_id) interruptedAssistantItems.add(data.payload.item_id)
+        player?.stop(data.payload?.item_id || activeAssistantItemId)
         liveAiText.value = ''
-        finishAssistantTurn()
+        interactionState.value = 'interrupted'
         break
       case 'state.changed':
         if (data.payload?.state === 'listening') finishAssistantTurn()
@@ -208,6 +291,7 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
         error.value = formatVoiceError(data.payload)
         hintText.value = error.value
         answerState.value = connected.value && !isPaused ? 'ready' : 'waiting'
+        interactionState.value = 'error'
         break
       case 'cost.limit_reached':
         error.value = '语音面试时长已达上限'
@@ -225,6 +309,7 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
   async function connect() {
     if (connecting.value || connected.value) return
     connecting.value = true
+    interactionState.value = 'connecting'
     error.value = null
     hintText.value = '正在连接语音面试官'
 
@@ -311,6 +396,7 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
     resetRecordingEvidence()
     error.value = null
     answerState.value = 'recording'
+    interactionState.value = 'listening'
     hintText.value = '正在回答，完成后点击“回答完毕”'
     const started = await startCapture()
     if (!started) {
@@ -322,12 +408,11 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
 
   function finishAnswer() {
     if (!connected.value || answerState.value !== 'recording') return false
-    suspendCapture()
 
     if (audioChunksSent === 0) {
       resetRecordingEvidence()
       answerState.value = 'ready'
-      error.value = '没有采集到音频，请检查麦克风后重试'
+      error.value = '还没有检测到回答，请靠近麦克风后重试'
       hintText.value = error.value
       return false
     }
@@ -341,8 +426,11 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
     }
 
     resetRecordingEvidence()
+    speechUploadActive = false
+    prebuffer.length = 0
     error.value = null
     answerState.value = 'submitting'
+    interactionState.value = 'thinking'
     hintText.value = '正在整理你的回答'
     startSubmitTimer()
     return true
@@ -364,6 +452,9 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
     connecting.value = false
     avatarSpeaking.value = false
     answerState.value = 'waiting'
+    interactionState.value = 'waiting'
+    liveUserText.value = ''
+    isMuted.value = false
   }
 
   function setPaused(paused) {
@@ -372,15 +463,31 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
       resetRecordingEvidence()
       stopCapture()
       hintText.value = '面试已暂停'
+      interactionState.value = 'waiting'
     } else if (connected.value) {
-      answerState.value = avatarSpeaking.value ? 'waiting' : 'ready'
-      hintText.value = avatarSpeaking.value ? '请听面试官提问' : '准备好后，点击麦克风开始回答'
+      answerState.value = avatarSpeaking.value ? 'waiting' : (turnMode === 'hybrid' ? 'recording' : 'ready')
+      interactionState.value = avatarSpeaking.value ? 'speaking' : (turnMode === 'hybrid' ? 'listening' : 'waiting')
+      hintText.value = avatarSpeaking.value ? '请听面试官提问' : (turnMode === 'hybrid' ? '请直接开始回答' : '准备好后，点击麦克风开始回答')
+      if (turnMode === 'hybrid') startCapture()
     }
   }
 
   function clearTranscript() {
     transcriptEntries.value = []
     liveAiText.value = ''
+    liveUserText.value = ''
+  }
+
+  function toggleMute() {
+    isMuted.value = !isMuted.value
+    resetSpeechGate()
+    if (isMuted.value) {
+      hintText.value = '麦克风已静音'
+    } else if (connected.value && !isPaused) {
+      answerState.value = turnMode === 'hybrid' ? 'recording' : 'ready'
+      interactionState.value = turnMode === 'hybrid' ? 'listening' : 'waiting'
+      hintText.value = turnMode === 'hybrid' ? '请直接开始回答' : '准备好后，点击麦克风开始回答'
+    }
   }
 
   return reactive({
@@ -394,6 +501,9 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
     liveAiText,
     waveformActive,
     answerState,
+    interactionState,
+    liveUserText,
+    isMuted,
     connect,
     disconnect,
     startAnswer,
@@ -401,5 +511,6 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
     setPaused,
     loadHistory,
     clearTranscript,
+    toggleMute,
   })
 }
