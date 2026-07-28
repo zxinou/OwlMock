@@ -49,10 +49,8 @@ class RealtimeConfig(BaseModel):
     provider: str
     model: str
     voice: str = "alloy"
-    vad_mode: str = "semantic"  # semantic / server / hybrid / none
+    vad_mode: str = "semantic"  # semantic / server / none
     vad_threshold: float = 0.5
-    vad_silence_duration_ms: int = 1800
-    vad_prefix_padding_ms: int = 300
     transcription: RealtimeTranscriptionConfig = Field(default_factory=RealtimeTranscriptionConfig)
     max_session_minutes: int = 15
     midsummary: RealtimeMidSummaryConfig = Field(default_factory=RealtimeMidSummaryConfig)

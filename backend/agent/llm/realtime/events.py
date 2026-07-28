@@ -78,15 +78,8 @@ class ConversationItemInputAudioTranscriptionCompleted(RealtimeUpstreamEvent):
 
 
 @dataclass(frozen=True)
-class ConversationItemInputAudioTranscriptionDelta(RealtimeUpstreamEvent):
-    item_id: str = ""
-    transcript: str = ""
-
-
-@dataclass(frozen=True)
 class ResponseDone(RealtimeUpstreamEvent):
     response_id: str = ""
-    status: str = "completed"
     usage: dict = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
