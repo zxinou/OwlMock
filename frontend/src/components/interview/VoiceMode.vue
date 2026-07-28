@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { CircleAlert, LoaderCircle, Mic, PhoneOff, Square, Volume2 } from 'lucide-vue-next'
+import { CircleAlert, LoaderCircle, Mic, MicOff, PhoneOff, Square, Volume2 } from 'lucide-vue-next'
 import OwlLogo from '@/components/common/OwlLogo.vue'
 import { useVoiceInterview } from '@/composables/useVoiceInterview.js'
 import { isVoiceSupported } from '@/utils/voiceAudio.js'
@@ -54,6 +54,21 @@ const controlLabel = computed(() => {
   if (voice.answerState === 'submitting') return '正在处理'
   if (voice.answerState === 'ready') return '开始回答'
   return '请听题'
+})
+
+const statusLabel = computed(() => {
+  if (voice.isMuted) return '麦克风已静音'
+  const labels = {
+    connecting: '正在连接',
+    waiting: '等待面试官',
+    listening: '正在聆听',
+    speech_detected: '正在回答',
+    thinking: '正在整理回答',
+    speaking: '面试官正在提问',
+    interrupted: '已打断，继续回答',
+    error: '连接异常',
+  }
+  return labels[voice.interactionState] || controlLabel.value
 })
 
 const controlDisabled = computed(() => {
@@ -143,7 +158,14 @@ watch(() => props.paused, (paused) => {
   if (paused) stopAnswerTimer()
 })
 watch(() => voice.answerState, (state) => {
-  if (state !== 'recording') stopAnswerTimer()
+  if (state === 'recording') {
+    if (!answerTimer) {
+      answerElapsed.value = 0
+      answerTimer = setInterval(() => answerElapsed.value++, 1000)
+    }
+  } else {
+    stopAnswerTimer()
+  }
 })
 
 onMounted(() => {
@@ -166,7 +188,7 @@ onUnmounted(() => {
     <div class="voice-container">
       <div class="voice-status" :class="{ active: voiceRunning && voice.connected, recording: voice.answerState === 'recording' }" aria-live="polite">
         <span class="voice-status__dot"></span>
-        <span>{{ voice.connecting ? '连接中' : controlLabel }}</span>
+        <span>{{ statusLabel }}</span>
       </div>
 
       <div class="voice-avatar" :class="{ speaking: voice.avatarSpeaking, listening: voice.answerState === 'recording' }">
@@ -206,6 +228,10 @@ onUnmounted(() => {
           <span class="transcript-label">你的上一轮回答</span>
           <p>{{ latestAnswer }}</p>
         </div>
+        <div v-if="voice.liveUserText" class="voice-transcript__answer voice-transcript__answer--live">
+          <span class="transcript-label">你的回答 · 识别中</span>
+          <p>{{ voice.liveUserText }}</p>
+        </div>
       </div>
 
       <div class="voice-controls">
@@ -228,9 +254,15 @@ onUnmounted(() => {
           <span>{{ controlLabel }}</span>
         </button>
 
-        <button v-if="voiceRunning" type="button" class="voice-disconnect" title="关闭语音连接" aria-label="关闭语音连接" @click="stopVoice">
-          <PhoneOff :size="18" />
-        </button>
+        <div v-if="voiceRunning" class="voice-secondary-controls">
+          <button type="button" class="voice-icon-control" :class="{ active: voice.isMuted }" :title="voice.isMuted ? '恢复麦克风' : '静音麦克风'" :aria-label="voice.isMuted ? '恢复麦克风' : '静音麦克风'" @click="voice.toggleMute">
+            <MicOff v-if="voice.isMuted" :size="18" />
+            <Mic v-else :size="18" />
+          </button>
+          <button type="button" class="voice-icon-control voice-disconnect" title="关闭语音连接" aria-label="关闭语音连接" @click="stopVoice">
+            <PhoneOff :size="18" />
+          </button>
+        </div>
       </div>
 
       <div class="voice-timer">{{ formattedTime }}</div>
@@ -275,6 +307,8 @@ onUnmounted(() => {
 .transcript-label { display:block; margin-bottom:.2rem; color:var(--color-primary); font-size:.68rem; font-weight:700; }
 .voice-transcript__answer { margin-top:.8rem; padding-top:.7rem; border-top:1px dashed var(--color-border-light); color:var(--color-ink-muted); }
 .voice-transcript__answer .transcript-label { color:var(--color-ink-muted); }
+.voice-transcript__answer--live { color:var(--color-ink); }
+.voice-transcript__answer--live .transcript-label { color:var(--color-accent); }
 .voice-transcript__placeholder { color:var(--color-ink-muted); text-align:center; }
 .voice-controls { position:relative; display:flex; align-items:center; justify-content:center; min-height:4.25rem; }
 .voice-answer-control { min-width:10rem; height:4rem; display:inline-flex; align-items:center; justify-content:center; gap:.6rem; padding:0 1.25rem; border-radius:999px; color:var(--color-white); background:var(--color-primary); font-size:.82rem; font-weight:700; transition:transform .18s, background .18s, box-shadow .18s; }
@@ -283,10 +317,12 @@ onUnmounted(() => {
 .voice-answer-control.recording:hover { background:#bb5544; }
 .voice-answer-control.waiting, .voice-answer-control.processing { color:var(--color-ink-muted); background:var(--color-surface-alt); }
 .voice-answer-control:disabled { cursor:not-allowed; box-shadow:none; transform:none; }
-.voice-disconnect { position:absolute; left:calc(100% + .8rem); width:2.5rem; height:2.5rem; display:grid; place-items:center; border:1px solid var(--color-border); border-radius:50%; color:var(--color-ink-muted); background:var(--color-white); }
+.voice-secondary-controls { position:absolute; left:calc(100% + .8rem); display:flex; gap:.45rem; }
+.voice-icon-control { width:2.5rem; height:2.5rem; display:grid; place-items:center; border:1px solid var(--color-border); border-radius:50%; color:var(--color-ink-muted); background:var(--color-white); transition:color .18s,border-color .18s,background .18s; }
+.voice-icon-control:hover,.voice-icon-control.active { color:var(--color-primary); border-color:var(--color-primary-light); background:color-mix(in srgb,var(--color-primary) 7%,var(--color-white)); }
 .voice-disconnect:hover { color:var(--color-accent); border-color:var(--color-accent-light); background:color-mix(in srgb,var(--color-accent) 7%,var(--color-white)); }
 .voice-timer { color:var(--color-ink-muted); font-family:var(--font-mono); font-size:.75rem; }
 .spin { animation:spin 1s linear infinite; } @keyframes spin { to { transform:rotate(360deg); } }
-:global(.dark) .voice-avatar__face, :global(.dark) .voice-disconnect { background:var(--color-surface); }
-@media (max-width:640px) { .voice-page { padding:1rem; } .voice-container { padding:1rem 0; } .voice-disconnect { position:static; margin-left:.65rem; } .voice-controls { width:100%; } }
+:global(.dark) .voice-avatar__face, :global(.dark) .voice-icon-control { background:var(--color-surface); }
+@media (max-width:640px) { .voice-page { padding:1rem; } .voice-container { padding:1rem 0; } .voice-secondary-controls { position:static; margin-left:.65rem; } .voice-controls { width:100%; } }
 </style>

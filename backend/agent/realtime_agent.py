@@ -15,6 +15,7 @@ from agent.llm.base import BaseRealtimeLLM
 from agent.llm.realtime.base import RealtimeSession
 from agent.llm.realtime.events import (
     ConversationItemInputAudioTranscriptionCompleted,
+    ConversationItemInputAudioTranscriptionDelta,
     InputAudioBufferSpeechStarted,
     InputAudioBufferSpeechStopped,
     RealtimeError,
@@ -145,10 +146,17 @@ class RealtimeAgent:
         self._manual_turn_mode = bool(
             self.profile.realtime and self.profile.realtime.vad_mode == "none"
         )
+        self._hybrid_turn_mode = bool(
+            self.profile.realtime and self.profile.realtime.vad_mode == "hybrid"
+        )
+        self._managed_turn_mode = self._manual_turn_mode or self._hybrid_turn_mode
         self._response_authorized = not self._manual_turn_mode
         self._discarding_unauthorized_response = False
         self._response_in_progress = False
+        self._input_turn_submitted = False
+        self._turn_response_completed = False
         self._active_assistant_item_id: str | None = None
+        self._interrupted_assistant_item_ids: set[str] = set()
 
     async def run(self, client_ws: object) -> None:
         """Run the realtime agent.
@@ -187,6 +195,7 @@ class RealtimeAgent:
                         "session_id": self.session_id,
                         "mode": "voice",
                         "audio": self._get_audio_config(),
+                        **self._get_voice_capabilities(),
                     },
                 ))
 
@@ -229,10 +238,26 @@ class RealtimeAgent:
         vad_mode = self.profile.realtime.vad_mode
         if vad_mode == "none":
             return {"type": "none"}
-        if vad_mode == "server":
-            return {"type": "server_vad", "threshold": self.profile.realtime.vad_threshold}
+        if vad_mode in {"server", "hybrid"}:
+            return {
+                "type": "server_vad",
+                "threshold": self.profile.realtime.vad_threshold,
+                "silence_duration_ms": self.profile.realtime.vad_silence_duration_ms,
+                "prefix_padding_ms": self.profile.realtime.vad_prefix_padding_ms,
+            }
         # Default: semantic_vad
         return {"type": "semantic_vad"}
+
+    def _get_voice_capabilities(self) -> dict:
+        realtime = self.profile.realtime
+        turn_mode = realtime.vad_mode if realtime else "server"
+        return {
+            "turn_mode": turn_mode,
+            "supports_interrupt": turn_mode != "none",
+            "vad_silence_duration_ms": (
+                realtime.vad_silence_duration_ms if realtime else 1800
+            ),
+        }
 
     def _build_transcription_config(self) -> dict:
         if not self.profile.realtime or not self.profile.realtime.transcription:
@@ -334,18 +359,30 @@ class RealtimeAgent:
 
             elif msg_type == "control.commit":
                 # Manual VAD: commit audio buffer and trigger response
-                if self._manual_turn_mode and self._response_in_progress:
-                    logger.info("Ignored duplicate manual commit while response is active")
+                if self._managed_turn_mode and (
+                    self._input_turn_submitted or self._response_in_progress
+                ):
+                    logger.info("Ignored duplicate voice commit while response is active")
                     continue
+                self._input_turn_submitted = True
+                self._turn_response_completed = False
                 self._response_authorized = True
                 self._discarding_unauthorized_response = False
                 self._response_in_progress = True
                 self._active_assistant_item_id = None
                 await upstream.commit_audio()
-                await upstream.create_response()
+                # DashScope server VAD creates the response after it commits
+                # the buffer. Sending response.create here races that commit
+                # and can produce an empty response that masks the real one.
+                if not self._hybrid_turn_mode:
+                    await upstream.create_response()
                 self._set_state(RealtimeAgentState.THINKING)
 
             elif msg_type == "control.interrupt":
+                if self._active_assistant_item_id:
+                    self._interrupted_assistant_item_ids.add(
+                        self._active_assistant_item_id
+                    )
                 await upstream.cancel_response()
                 self._response_in_progress = False
                 self._response_authorized = not self._manual_turn_mode
@@ -364,6 +401,7 @@ class RealtimeAgent:
                         continue
                     self._response_authorized = True
                     self._discarding_unauthorized_response = False
+                    self._turn_response_completed = False
                     self._response_in_progress = True
                     self._active_assistant_item_id = None
                     await upstream.inject_summary(
@@ -404,6 +442,25 @@ class RealtimeAgent:
                 ResponseFunctionCallArgumentsDone,
                 ResponseDone,
             ))
+            if (
+                self._managed_turn_mode
+                and is_response_event
+                and self._turn_response_completed
+            ):
+                logger.warning("Ignored extra realtime response for completed voice turn")
+                continue
+            event_item_id = getattr(event, "item_id", "")
+            if event_item_id and event_item_id in self._interrupted_assistant_item_ids:
+                continue
+            if isinstance(event, (
+                ResponseAudioDelta,
+                ResponseAudioDone,
+                ResponseAudioTranscriptDelta,
+                ResponseAudioTranscriptDone,
+            )) and event_item_id and (
+                not self._managed_turn_mode or self._active_assistant_item_id is None
+            ):
+                self._active_assistant_item_id = event_item_id
             if self._manual_turn_mode and is_response_event and not self._response_authorized:
                 if isinstance(event, ResponseDone):
                     self._discarding_unauthorized_response = False
@@ -415,7 +472,7 @@ class RealtimeAgent:
                     await upstream.cancel_response()
                 continue
 
-            if self._manual_turn_mode and isinstance(event, (
+            if self._managed_turn_mode and isinstance(event, (
                 ResponseAudioDelta,
                 ResponseAudioDone,
                 ResponseAudioTranscriptDelta,
@@ -439,21 +496,40 @@ class RealtimeAgent:
                 logger.debug("Realtime session updated")
 
             elif isinstance(event, InputAudioBufferSpeechStarted):
+                self._input_turn_submitted = False
+                self._turn_response_completed = False
                 # Barge-in: if AI is speaking, cancel and notify client
                 if self._state == RealtimeAgentState.AI_SPEAKING:
+                    interrupted_item_id = self._active_assistant_item_id or ""
+                    if self._active_assistant_item_id:
+                        self._interrupted_assistant_item_ids.add(
+                            self._active_assistant_item_id
+                        )
                     await upstream.cancel_response()
+                    self._response_in_progress = False
+                    self._active_assistant_item_id = None
                     await self._push_to_client(client_ws, FrontendEvent(
                         type=EventType.AI_INTERRUPTED,
-                        payload={"item_id": event.item_id},
+                        payload={"item_id": interrupted_item_id},
                     ))
                     self._append_event(FrontendEvent(
                         type=EventType.AI_INTERRUPTED,
-                        payload={"item_id": event.item_id},
+                        payload={"item_id": interrupted_item_id},
                     ))
                 self._set_state(RealtimeAgentState.LISTENING)
+                await self._push_to_client(client_ws, FrontendEvent(
+                    type=EventType.USER_SPEECH_STARTED,
+                    payload={"item_id": event.item_id},
+                ))
 
             elif isinstance(event, InputAudioBufferSpeechStopped):
-                pass  # No action needed
+                self._input_turn_submitted = True
+                self._response_in_progress = True
+                self._set_state(RealtimeAgentState.THINKING)
+                await self._push_to_client(client_ws, FrontendEvent(
+                    type=EventType.USER_SPEECH_STOPPED,
+                    payload={"item_id": event.item_id},
+                ))
 
             elif isinstance(event, ResponseAudioDelta):
                 await self._push_to_client(client_ws, FrontendEvent(
@@ -485,6 +561,14 @@ class RealtimeAgent:
                     payload={"item_id": event.item_id, "text": text},
                 ))
 
+            elif isinstance(event, ConversationItemInputAudioTranscriptionDelta):
+                text = (event.transcript or "").strip()
+                if text:
+                    await self._push_to_client(client_ws, FrontendEvent(
+                        type=EventType.USER_TRANSCRIPT_DELTA,
+                        payload={"item_id": event.item_id, "text": text},
+                    ))
+
             elif isinstance(event, ConversationItemInputAudioTranscriptionCompleted):
                 text = (event.transcript or "").strip()
                 if not text:
@@ -504,11 +588,17 @@ class RealtimeAgent:
                 )
 
             elif isinstance(event, ResponseDone):
-                await self._on_response_done(event)
-                if self._manual_turn_mode:
-                    self._response_authorized = False
+                if event.status in {"cancelled", "canceled"}:
                     self._response_in_progress = False
                     self._active_assistant_item_id = None
+                    continue
+                await self._on_response_done(event)
+                self._turn_response_completed = True
+                if self._manual_turn_mode:
+                    self._response_authorized = False
+                self._response_in_progress = False
+                self._input_turn_submitted = False
+                self._active_assistant_item_id = None
                 if not self._closed:
                     await self._push_to_client(client_ws, FrontendEvent(
                         type=EventType.STATE_CHANGED,
