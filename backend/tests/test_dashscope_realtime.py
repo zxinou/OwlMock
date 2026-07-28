@@ -15,6 +15,7 @@ from agent.llm.realtime.dashscope_realtime import (
 )
 from agent.llm.realtime.events import (
     ConversationItemInputAudioTranscriptionCompleted,
+    ConversationItemInputAudioTranscriptionDelta,
     InputAudioBufferCommitted,
     InputAudioBufferSpeechStarted,
     InputAudioBufferSpeechStopped,
@@ -198,7 +199,10 @@ class TestDashScopeRealtimeSessionEventMapping:
             "text": "hello ",
             "stash": "world",
         }
-        assert session._map_event(delta) is None
+        partial = session._map_event(delta)
+        assert isinstance(partial, ConversationItemInputAudioTranscriptionDelta)
+        assert partial.item_id == "i10"
+        assert partial.transcript == "hello world"
         completed = {
             "type": "conversation.item.input_audio_transcription.completed",
             "item_id": "i10",
@@ -221,11 +225,16 @@ class TestDashScopeRealtimeSessionEventMapping:
         session = self._make_session()
         data = {
             "type": "response.done",
-            "response": {"id": "r1", "usage": {"input_tokens": 100}},
+            "response": {
+                "id": "r1",
+                "status": "cancelled",
+                "usage": {"input_tokens": 100},
+            },
         }
         result = session._map_event(data)
         assert isinstance(result, ResponseDone)
         assert result.response_id == "r1"
+        assert result.status == "cancelled"
         assert result.usage["input_tokens"] == 100
 
     def test_map_rate_limit(self) -> None:
