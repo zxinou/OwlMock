@@ -12,7 +12,6 @@ from agent.llm.base import BaseRealtimeLLM
 from agent.llm.realtime.base import RealtimeSession
 from agent.llm.realtime.events import (
     ConversationItemInputAudioTranscriptionCompleted,
-    ConversationItemInputAudioTranscriptionDelta,
     InputAudioBufferCommitted,
     InputAudioBufferSpeechStarted,
     InputAudioBufferSpeechStopped,
@@ -86,7 +85,7 @@ class DashScopeRealtimeLLM(BaseRealtimeLLM):
 
         import dashscope
         from dashscope.audio.qwen_omni import OmniRealtimeConversation
-        from dashscope.audio.qwen_omni.omni_realtime import MultiModality
+        from dashscope.audio.qwen_omni.omni_realtime import MultiModality, OmniRealtimeCallback
 
         dashscope.api_key = self._api_key
 
@@ -110,10 +109,10 @@ class DashScopeRealtimeLLM(BaseRealtimeLLM):
             "semantic": "server_vad",
             "server_vad": "server_vad",
             "server": "server_vad",
-            "hybrid": "server_vad",
         }
         vad_type = vad_type_map.get(vad_mode, "server_vad")
 
+        from dashscope.audio.qwen_omni.omni_realtime import MultiModality
 
         transcription_model = transcription.get("model") or None
         if transcription_model == "whisper":
@@ -125,8 +124,6 @@ class DashScopeRealtimeLLM(BaseRealtimeLLM):
             enable_turn_detection=enable_vad,
             turn_detection_type=vad_type,
             turn_detection_threshold=vad.get("threshold", 0.5),
-            prefix_padding_ms=vad.get("prefix_padding_ms", 300),
-            turn_detection_silence_duration_ms=vad.get("silence_duration_ms", 1800),
             enable_input_audio_transcription=transcription.get("enabled", True),
             input_audio_transcription_model=transcription_model,
         )
@@ -309,9 +306,6 @@ class DashScopeRealtimeSession(RealtimeSession):
                 partial = (confirmed + stash).strip()
                 if partial:
                     self._transcription_buffers[item_id] = partial
-                    return ConversationItemInputAudioTranscriptionDelta(
-                        item_id=item_id, transcript=partial
-                    )
             return None
 
         if event_type == "conversation.item.input_audio_transcription.completed":
@@ -337,7 +331,6 @@ class DashScopeRealtimeSession(RealtimeSession):
             usage = response.get("usage", {})
             return ResponseDone(
                 response_id=response.get("id", ""),
-                status=response.get("status", "completed"),
                 usage=usage,
             )
 
