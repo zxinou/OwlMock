@@ -30,7 +30,10 @@ class EventType(str, Enum):
     # User events
     USER_TEXT = "user.text"
     USER_TRANSCRIPT = "user.transcript"
+    USER_TRANSCRIPT_DELTA = "user.transcript.delta"
     USER_AUDIO_CHUNK = "user.audio.chunk"
+    USER_SPEECH_STARTED = "user.speech.started"
+    USER_SPEECH_STOPPED = "user.speech.stopped"
 
     # State events
     STATE_CHANGED = "state.changed"

@@ -22,8 +22,10 @@ realtime:
   provider: "dashscope_realtime"
   model: "qwen3.5-omni-flash-realtime"
   voice: "Cindy"  #台湾甜妹
-  vad_mode: "none"
+  vad_mode: "hybrid"
   vad_threshold: 0.5
+  vad_silence_duration_ms: 1800
+  vad_prefix_padding_ms: 300
   transcription:
     enabled: true
     model: "whisper"
