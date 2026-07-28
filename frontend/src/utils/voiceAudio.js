@@ -39,13 +39,11 @@ export function pcm16Base64ToFloat32(b64) {
 }
 
 export class PcmPlayer {
-  constructor(sampleRate, { onIdle } = {}) {
+  constructor(sampleRate) {
     this.sampleRate = sampleRate
-    this.onIdle = onIdle
     this.ctx = null
     this.nextTime = 0
     this.sources = []
-    this.blockedItemIds = new Set()
   }
 
   _ensureContext() {
@@ -58,8 +56,8 @@ export class PcmPlayer {
     }
   }
 
-  playBase64(b64, itemId = '') {
-    if (!b64 || (itemId && this.blockedItemIds.has(itemId))) return false
+  playBase64(b64) {
+    if (!b64) return
     this._ensureContext()
     const float32 = pcm16Base64ToFloat32(b64)
     const buffer = this.ctx.createBuffer(1, float32.length, this.sampleRate)
@@ -74,13 +72,10 @@ export class PcmPlayer {
     this.sources.push(source)
     source.onended = () => {
       this.sources = this.sources.filter((s) => s !== source)
-      if (this.sources.length === 0) this.onIdle?.()
     }
-    return true
   }
 
-  stop(blockItemId = '') {
-    if (blockItemId) this.blockedItemIds.add(blockItemId)
+  stop() {
     for (const source of this.sources) {
       try {
         source.stop()
@@ -92,11 +87,6 @@ export class PcmPlayer {
     if (this.ctx) {
       this.nextTime = this.ctx.currentTime
     }
-    this.onIdle?.()
-  }
-
-  isIdle() {
-    return this.sources.length === 0
   }
 
   destroy() {
