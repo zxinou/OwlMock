@@ -40,7 +40,6 @@ ENV PATH="/app/backend/.venv/bin:$PATH" \
     PORT=8000
 
 USER owlmock
-VOLUME ["/data"]
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
