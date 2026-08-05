@@ -12,10 +12,11 @@ from sqlalchemy import select
 
 from agent.factory import AgentFactory
 from agent.loop import CancelToken
-from api.deps import get_agent_factory, get_session_store
+from api.deps import get_agent_factory, get_session_store, require_owner
 from api.schemas import EventType, FrontendEvent
+from security.session import OWNER_ID
 from storage.db.engine import async_session_factory
-from storage.db.models import RepoAnalysis, Resume, Session
+from storage.db.models import JdAnalysisRecord, JobProject, RepoAnalysis, Resume, Session
 from storage.session.store import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,10 @@ def _get_or_create_session_state(session_id: str) -> dict:
     return _active_sessions[session_id]
 
 
-async def _load_session_context(session_id: str) -> dict:
+async def _load_session_context(
+    session_id: str,
+    user_id: str = OWNER_ID,
+) -> dict:
     """Load session metadata, resume content, and repo analyses from DB.
 
     Returns dict with user_id, profile_id, resume_id, resume_content, github_repos.
@@ -62,7 +66,10 @@ async def _load_session_context(session_id: str) -> dict:
     """
     async with async_session_factory() as db:
         result = await db.execute(
-            select(Session).where(Session.id == session_id)
+            select(Session).where(
+                Session.id == session_id,
+                Session.user_id == user_id,
+            )
         )
         session = result.scalar_one_or_none()
 
@@ -72,15 +79,36 @@ async def _load_session_context(session_id: str) -> dict:
         ctx = {
             "user_id": session.user_id,
             "profile_id": session.profile_id,
+            "project_id": session.project_id,
+            "job_description": "",
             "resume_id": session.resume_id,
             "resume_content": "",
             "github_repos": [],
         }
 
+        if session.project_id:
+            project = await db.get(JobProject, session.project_id)
+            if (
+                project is not None
+                and project.user_id == session.user_id
+                and project.current_jd_analysis_id
+            ):
+                jd = await db.get(JdAnalysisRecord, project.current_jd_analysis_id)
+                if (
+                    jd is not None
+                    and jd.user_id == session.user_id
+                    and jd.project_id == project.id
+                    and jd.status == "completed"
+                ):
+                    ctx["job_description"] = jd.text
+
         # Load resume content if available
         if session.resume_id:
             resume_result = await db.execute(
-                select(Resume).where(Resume.id == session.resume_id)
+                select(Resume).where(
+                    Resume.id == session.resume_id,
+                    Resume.user_id == user_id,
+                )
             )
             resume = resume_result.scalar_one_or_none()
             if resume and resume.content:
@@ -94,6 +122,7 @@ async def _load_session_context(session_id: str) -> dict:
                     select(RepoAnalysis).where(
                         RepoAnalysis.id.in_(repo_ids),
                         RepoAnalysis.status == "done",
+                        RepoAnalysis.user_id == user_id,
                     )
                 )
                 repos = repo_result.scalars().all()
@@ -110,12 +139,13 @@ async def send_message(
     request: SendMessageRequest,
     agent_factory: AgentFactory = Depends(get_agent_factory),
     session_store: SessionStore = Depends(get_session_store),
+    user_id: str = Depends(require_owner),
 ):
     """Send a user message and trigger agent processing (for SSE stream)."""
     state = _get_or_create_session_state(session_id)
 
     # Load session context from DB
-    ctx = await _load_session_context(session_id)
+    ctx = await _load_session_context(session_id, user_id)
 
     # Get session events
     events = session_store.read_events(ctx["user_id"], session_id)
@@ -147,6 +177,7 @@ async def send_message(
                 mode="text",
                 user_id=ctx["user_id"],
                 resume_content=ctx["resume_content"],
+                job_description=ctx["job_description"],
                 github_repos=ctx["github_repos"],
                 resume_id=ctx["resume_id"],
             )
@@ -159,9 +190,10 @@ async def send_message(
                     session_id, ctx["user_id"],
                 )
             )
-        except Exception as e:
+        except Exception as error:
             state["is_running"] = False
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.error("Failed to create interview agent type=%s", type(error).__name__)
+            raise HTTPException(status_code=503, detail="Interview service unavailable")
 
     return {"status": "ok", "session_id": session_id}
 
@@ -172,10 +204,11 @@ async def chat(
     request: ChatRequest,
     agent_factory: AgentFactory = Depends(get_agent_factory),
     session_store: SessionStore = Depends(get_session_store),
+    user_id: str = Depends(require_owner),
 ):
     """Synchronous chat - wait for complete response."""
     # Load session context from DB
-    ctx = await _load_session_context(session_id)
+    ctx = await _load_session_context(session_id, user_id)
 
     # Get session events
     events = session_store.read_events(ctx["user_id"], session_id)
@@ -197,11 +230,13 @@ async def chat(
             mode="text",
             user_id=ctx["user_id"],
             resume_content=ctx["resume_content"],
+            job_description=ctx["job_description"],
             github_repos=ctx["github_repos"],
             resume_id=ctx["resume_id"],
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as error:
+        logger.error("Failed to create interview agent type=%s", type(error).__name__)
+        raise HTTPException(status_code=503, detail="Interview service unavailable")
 
     # Run agent and collect all events
     collected_events = []
@@ -218,9 +253,9 @@ async def chat(
             # Capture the final text
             if event.type == EventType.ASSISTANT_TEXT_DONE:
                 response_text = event.payload.get("text", "")
-    except Exception as e:
-        logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as error:
+        logger.error("Interview chat failed type=%s", type(error).__name__)
+        raise HTTPException(status_code=500, detail="Interview request failed")
 
     return ChatResponse(
         text=response_text,
@@ -248,11 +283,11 @@ async def _run_agent(
             # Persist events that should be saved
             if session_store._should_persist(event):
                 session_store.append_event(user_id, session_id, event)
-    except Exception as e:
-        logger.error(f"Agent error: {e}")
+    except Exception as error:
+        logger.error("Interview agent failed type=%s", type(error).__name__)
         error_event = FrontendEvent(
             type=EventType.ERROR,
-            payload={"code": "agent_error", "message": str(e)},
+            payload={"code": "agent_error", "message": "Interview request failed"},
         )
         await state["event_queue"].put(error_event)
     finally:
@@ -262,8 +297,10 @@ async def _run_agent(
 @router.post("/sessions/{session_id}/interrupt")
 async def interrupt_agent(
     session_id: str,
+    user_id: str = Depends(require_owner),
 ):
     """Interrupt the running agent."""
+    await _load_session_context(session_id, user_id)
     state = _get_or_create_session_state(session_id)
     state["cancel_token"].cancel()
     return {"status": "ok", "session_id": session_id}
@@ -273,6 +310,7 @@ async def interrupt_agent(
 async def stream_events(
     session_id: str,
     session_store: SessionStore = Depends(get_session_store),
+    user_id: str = Depends(require_owner),
 ):
     """SSE endpoint for streaming events."""
     state = _get_or_create_session_state(session_id)
@@ -280,7 +318,10 @@ async def stream_events(
     # Load session to get actual user_id
     async with async_session_factory() as db:
         result = await db.execute(
-            select(Session).where(Session.id == session_id)
+            select(Session).where(
+                Session.id == session_id,
+                Session.user_id == user_id,
+            )
         )
         session = result.scalar_one_or_none()
     if session is None:

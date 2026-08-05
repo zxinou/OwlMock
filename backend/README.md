@@ -11,6 +11,88 @@ AI 求职助手后端，基于 FastAPI + ReAct Agent + Realtime Voice 架构。
 - **LLM Providers:** DashScope Qwen、智谱 GLM（文本）；DashScope Qwen-Omni（语音）
 - **Observability:** Langfuse (OpenTelemetry SDK v4)
 
+## Deployment operations
+
+The root `Dockerfile` builds the frontend and serves it from the FastAPI process.
+For a local production-style deployment, use the Compose file in this directory:
+
+```bash
+cp .env.example .env
+# Edit .env before starting: OWLMOCK_SESSION_SECRET is required in production.
+docker compose up --build -d
+docker compose logs -f app
+```
+
+OwlMock uses public email/password accounts. Set a stable, random
+`OWLMOCK_SESSION_SECRET` (for example, `openssl rand -hex 32`). Changing that
+secret invalidates current signed cookies. Keep `OWLMOCK_COOKIE_SECURE=true` on
+HTTPS deployments, and use `false` only for local HTTP development.
+`OWLMOCK_ALLOW_REGISTRATION=true` lets visitors create accounts. To bridge old
+single-owner data, set `OWLMOCK_BOOTSTRAP_EMAIL` and `OWLMOCK_ADMIN_PASSWORD`
+together; startup creates the `default` account once. Email verification and
+password recovery are not included in this no-paid-provider beta.
+
+For Railway, deploy this repository using the root `railway.toml` and Dockerfile,
+then mount a persistent Railway volume at `/data` and set:
+
+```dotenv
+OWLMOCK_DATA_DIR=/data
+OWLMOCK_SESSION_SECRET=replace-with-a-random-32-byte-secret
+OWLMOCK_ALLOW_REGISTRATION=true
+OWLMOCK_COOKIE_SECURE=true
+OWLMOCK_AUTH_RATE_LIMIT=8
+OWLMOCK_AUTH_RATE_WINDOW_SECONDS=300
+TRACER=noop
+```
+
+Railway supplies `PORT`. Provider credentials such as `DASHSCOPE_API_KEY` and
+`ZHIPU_API_KEY` are optional until the associated analysis features are used.
+Keep Railway at one replica while this release uses SQLite, and attach the same
+`/data` volume to every deployment. Do not provide a GitHub token that can read
+private repositories to a public untrusted deployment.
+
+### Upgrade, backup, and restore
+
+Back up before changing an image or deploying a new release:
+
+```bash
+docker compose exec app python -m management backup
+# Output: {"status":"ok","archive":"/data/backups/owlmock-<timestamp>.zip"}
+docker compose build --pull
+docker compose up -d
+```
+
+The archive contains a consistent SQLite snapshot and managed user data. Restore
+only while the app is stopped:
+
+```bash
+docker compose stop app
+docker compose run --rm app python -m management restore /data/backups/owlmock-<timestamp>.zip
+docker compose up -d app
+```
+
+For a non-Docker installation, use the same CLI with explicit paths:
+
+```bash
+uv run python -m management backup --data-dir /srv/owlmock/data --output /srv/owlmock/backups/owlmock.zip
+uv run python -m management restore /srv/owlmock/backups/owlmock.zip --data-dir /srv/owlmock/data
+```
+
+The restore command checks the archive manifest, checksums, SQLite integrity, and
+schema revision before installation. A successful restore prints JSON containing
+`status`, `restored_files`, and `schema_revision`.
+
+### Proxy and troubleshooting
+
+Place one HTTPS reverse proxy in front of port 8000 so the SPA, `/api`, and `/ws`
+remain same-origin. The production command accepts standard forwarded headers. Set
+`OWLMOCK_COOKIE_SECURE=true` when TLS terminates at that proxy. If health checks or
+requests fail, inspect `docker compose logs -f app` and
+`curl http://127.0.0.1:8000/api/health/live`. A readiness failure usually means
+the session secret or persistent `/data` volume is missing; lost login sessions
+usually mean the session secret changed;
+missing data after a redeploy usually means the `/data` volume was not retained.
+
 ## Project Structure
 
 ```

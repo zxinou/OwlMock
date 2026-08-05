@@ -10,6 +10,8 @@ frontend/node_modules
 frontend/dist
 frontend-original
 frontend-vue-old
+frontend/test-results/
+frontend/playwright-report/
 
 # Agent / tool config
 .agents
@@ -37,6 +39,7 @@ htmlcov/
 # Secrets
 .env
 .env.*
+backend/storage/.session-secret
 !.env.example
 !backend/.env.example
 

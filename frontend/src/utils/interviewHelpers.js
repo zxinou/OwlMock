@@ -34,3 +34,13 @@ export function lastTranscriptEntry(events) {
   const entries = eventsToTranscriptEntries(events)
   return entries.at(-1) ?? null
 }
+
+/** Restore only modes supported by the interview UI. */
+export function normalizeSessionMode(mode) {
+  return mode === 'voice' ? 'voice' : 'text'
+}
+
+/** Prefer the owning job workspace when a session belongs to a project. */
+export function sessionReturnPath(projectId) {
+  return projectId ? `/projects/${encodeURIComponent(projectId)}` : '/interview'
+}

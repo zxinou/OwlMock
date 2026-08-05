@@ -96,7 +96,7 @@ class TestResumeAnalyze:
         file_path.write_bytes(b"fake pdf content")
 
         r = Resume(
-            id="r1", user_id="user-1", file_name="a.pdf", file_type="pdf",
+            id="r1", user_id="default", file_name="a.pdf", file_type="pdf",
             content="", file_path=str(file_path),
         )
         db_session.add(r)
@@ -141,7 +141,7 @@ class TestResumeAnalyze:
             "suggestions": [],
         })
         r = Resume(
-            id="r1", user_id="user-1", file_name="a.pdf", file_type="pdf",
+            id="r1", user_id="default", file_name="a.pdf", file_type="pdf",
             content="", file_path=str(file_path), analysis_result=cached_result,
         )
         db_session.add(r)
@@ -165,7 +165,7 @@ class TestResumeAnalyze:
         file_path.write_bytes(b"fake pdf content")
 
         r = Resume(
-            id="r1", user_id="user-1", file_name="a.pdf", file_type="pdf",
+            id="r1", user_id="default", file_name="a.pdf", file_type="pdf",
             content="", file_path=str(file_path),
             analysis_result='{"strengths":[],"weaknesses":[],"suggestions":[]}',
         )
@@ -214,7 +214,7 @@ class TestResumeAnalyze:
         file_path.write_bytes(b"fake pdf content")
 
         r = Resume(
-            id="r1", user_id="user-1", file_name="a.pdf", file_type="pdf",
+            id="r1", user_id="default", file_name="a.pdf", file_type="pdf",
             content="", file_path=str(file_path),
         )
         db_session.add(r)

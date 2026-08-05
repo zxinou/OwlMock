@@ -1,17 +1,16 @@
 import { reactive, watchEffect } from 'vue'
 
-const state = reactive({
-  dark: false,
-})
+function getInitialDarkMode() {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false
 
-function init() {
   const saved = localStorage.getItem('owlmock-dark')
-  if (saved !== null) {
-    state.dark = saved === '1'
-  } else {
-    state.dark = window.matchMedia('(prefers-color-scheme: dark)').matches
-  }
+  if (saved !== null) return saved === '1'
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
 }
+
+const state = reactive({
+  dark: getInitialDarkMode(),
+})
 
 function toggle() {
   state.dark = !state.dark
@@ -22,11 +21,12 @@ function set(val) {
 }
 
 watchEffect(() => {
+  if (typeof document === 'undefined') return
   document.documentElement.classList.toggle('dark', state.dark)
-  localStorage.setItem('owlmock-dark', state.dark ? '1' : '0')
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('owlmock-dark', state.dark ? '1' : '0')
+  }
 })
-
-init()
 
 export function useTheme() {
   return { state, toggle, set }

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
+from api.deps import require_owner
 from api.schemas import (
     CreateSessionRequest,
     CreateSessionResponse,
@@ -35,13 +35,18 @@ def get_session_store(request: Request) -> SessionStore:
 def get_session_service(
     request: Request,
     session_store: SessionStore = Depends(get_session_store),
+    owner_id: str = Depends(require_owner),
 ) -> SessionService:
     """Get session service with database session."""
     from storage.db.engine import async_session_factory
 
     # Create a new database session
     db_session = async_session_factory()
-    return SessionService(db_session=db_session, session_store=session_store)
+    return SessionService(
+        db_session=db_session,
+        session_store=session_store,
+        owner_id=owner_id,
+    )
 
 
 @router.post("/sessions", response_model=CreateSessionResponse)
@@ -108,6 +113,7 @@ async def get_session_events(
     session_id: str,
     request: Request,
     session_store: SessionStore = Depends(get_session_store),
+    owner_id: str = Depends(require_owner),
 ):
     """Get all events for a session."""
     # Get session to find user_id
@@ -118,7 +124,10 @@ async def get_session_events(
 
     async with async_session_factory() as db:
         result = await db.execute(
-            select(Session).where(Session.id == session_id)
+            select(Session).where(
+                Session.id == session_id,
+                Session.user_id == owner_id,
+            )
         )
         session = result.scalar_one_or_none()
 

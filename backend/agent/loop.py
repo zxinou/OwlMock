@@ -63,6 +63,7 @@ class ReActAgent:
         session_id: str,
         cancel_token: CancelToken | None = None,
         resume_content: str = "",
+        job_description: str = "",
         github_repos: list[str] | None = None,
         resume_id: str = "",
     ) -> None:
@@ -78,6 +79,7 @@ class ReActAgent:
         self.cancel_token = cancel_token or CancelToken()
         self.state = AgentState.IDLE
         self._resume_content = resume_content
+        self._job_description = job_description
         self._github_repos = github_repos or []
         self._resume_id = resume_id
         self._text_buffer: list[str] = []
@@ -113,6 +115,7 @@ class ReActAgent:
             messages = self.context_builder.build_messages(
                 self.profile, events, user_input,
                 resume_content=self._resume_content,
+                job_description=self._job_description,
                 user_id=self.user_id,
                 resume_id=self._resume_id,
                 github_repos=self._github_repos,

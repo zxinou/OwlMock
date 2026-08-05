@@ -8,20 +8,22 @@ import json
 import logging
 import uuid
 from pathlib import Path
+from trace import trace_analysis_request
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from agent.llm.providers.openai_compatible import build_multimodal_message
 from agent.llm.router import chat_structured_with_fallback
 from agent.profile_loader import ProfileLoader
+from api.deps import require_owner
 from config.settings import settings
 from service.jd_report import JdReport, normalize_jd_report
+from service.project_service import sync_project_from_jd_result
 from service.task_service import task_service
 from storage.db.engine import async_session_factory
 from storage.db.models import JdAnalysisRecord
-from trace import trace_analysis_request
 
 router = APIRouter(tags=["jd-analysis"])
 logger = logging.getLogger(__name__)
@@ -232,6 +234,7 @@ async def run_jd_analysis_task(analysis_id: str) -> None:
             current.stage = "completed"
             current.progress = 1.0
             current.error = None
+            await sync_project_from_jd_result(db, current, data)
             await db.commit()
         await task_service.complete_task(analysis_id, {"analysis_id": analysis_id})
     except asyncio.CancelledError:
@@ -239,7 +242,7 @@ async def run_jd_analysis_task(analysis_id: str) -> None:
             analysis_id, "cancelled", 0.0, status="failed", error="分析已取消"
         )
         raise
-    except Exception as exc:
+    except Exception:
         logger.exception("JD background analysis failed id=%s", analysis_id)
         await _persist_jd_progress(
             analysis_id,
@@ -266,6 +269,7 @@ async def _create_pending_jd_record(
     text: str,
     source_type: str = "text",
     source_path: str | None = None,
+    project_id: str | None = None,
 ) -> JdAnalysisRecord:
     record = JdAnalysisRecord(
         id=str(uuid.uuid4()),
@@ -274,6 +278,7 @@ async def _create_pending_jd_record(
         result_json="{}",
         source_type=source_type,
         source_path=source_path,
+        project_id=project_id,
         status="pending",
         stage="waiting",
         progress=0.0,
@@ -286,8 +291,43 @@ async def _create_pending_jd_record(
     return record
 
 
+async def create_pending_jd_image(
+    *,
+    file: UploadFile,
+    user_id: str,
+    project_id: str | None = None,
+    upload_root: str | None = None,
+) -> JdAnalysisRecord:
+    """Persist an uploaded JD image and schedule the shared analysis task."""
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only PNG and JPEG images are supported")
+    content = await file.read()
+    if len(content) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=413, detail="Image size cannot exceed 10MB")
+
+    root = Path(upload_root or settings.JD_UPLOAD_ROOT).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    extension = ".png" if file.content_type == "image/png" else ".jpg"
+    source_path = root / f"{uuid.uuid4()}{extension}"
+    source_path.write_bytes(content)
+    try:
+        return await _create_pending_jd_record(
+            user_id=user_id,
+            text=f"Image JD: {file.filename or 'unnamed screenshot'}",
+            source_type="image",
+            source_path=str(source_path),
+            project_id=project_id,
+        )
+    except Exception:
+        source_path.unlink(missing_ok=True)
+        raise
+
+
 @router.post("/jd/analyze")
-async def analyze_jd(body: JdAnalyzeRequest):
+async def analyze_jd(
+    body: JdAnalyzeRequest,
+    user_id: str = Depends(require_owner),
+):
     """Analyze a job description and return structured insights."""
     profile, prompt = load_jd_profile_and_prompt()
 
@@ -321,7 +361,7 @@ async def analyze_jd(body: JdAnalyzeRequest):
             raise HTTPException(502, ANALYSIS_UNAVAILABLE)
 
         data = structured.value.model_dump()
-        record = await save_jd_analysis(body.user_id, body.text, data)
+        record = await save_jd_analysis(user_id, body.text, data)
 
         span.update(
             output={
@@ -336,7 +376,7 @@ async def analyze_jd(body: JdAnalyzeRequest):
         return {
             **data,
             "id": record.id,
-            "user_id": body.user_id,
+            "user_id": user_id,
             "text": body.text,
             "created_at": record.created_at.isoformat() if record.created_at else None,
         }
@@ -345,7 +385,7 @@ async def analyze_jd(body: JdAnalyzeRequest):
 @router.post("/jd/analyze-image")
 async def analyze_jd_image(
     file: UploadFile,
-    user_id: str = Form("default"),
+    user_id: str = Depends(require_owner),
 ):
     """Analyze a job description screenshot with a multimodal model."""
     if file.content_type not in ALLOWED_IMAGE_TYPES:
@@ -425,10 +465,13 @@ async def analyze_jd_image(
 
 
 @router.post("/jd/analyses", status_code=202)
-async def submit_jd_analysis(body: JdAnalyzeRequest):
+async def submit_jd_analysis(
+    body: JdAnalyzeRequest,
+    user_id: str = Depends(require_owner),
+):
     """Persist a text JD and start a non-blocking analysis task."""
     record = await _create_pending_jd_record(
-        user_id=body.user_id,
+        user_id=user_id,
         text=body.text.strip(),
     )
     return {
@@ -442,7 +485,7 @@ async def submit_jd_analysis(body: JdAnalyzeRequest):
 @router.post("/jd/analyses/image", status_code=202)
 async def submit_jd_image_analysis(
     file: UploadFile,
-    user_id: str = Form("default"),
+    user_id: str = Depends(require_owner),
 ):
     """Persist a JD screenshot outside the reload tree and start analysis."""
     if file.content_type not in ALLOWED_IMAGE_TYPES:
@@ -458,7 +501,7 @@ async def submit_jd_image_analysis(
     source_path.write_bytes(content)
     try:
         record = await _create_pending_jd_record(
-            user_id=user_id,
+        user_id=user_id,
             text=f"图片 JD：{file.filename or '未命名截图'}",
             source_type="image",
             source_path=str(source_path),
@@ -475,7 +518,7 @@ async def submit_jd_image_analysis(
 
 
 @router.get("/jd/analyses")
-async def list_jd_analyses(user_id: str = "default"):
+async def list_jd_analyses(user_id: str = Depends(require_owner)):
     """List saved JD analysis history for one user."""
     async with async_session_factory() as db:
         result = await db.execute(
@@ -489,20 +532,40 @@ async def list_jd_analyses(user_id: str = "default"):
 
 
 @router.get("/jd/analyses/{analysis_id}")
-async def get_jd_analysis(analysis_id: str):
+async def get_jd_analysis(
+    analysis_id: str,
+    user_id: str = Depends(require_owner),
+):
     """Return persisted progress or the completed structured report."""
     async with async_session_factory() as db:
-        record = await db.get(JdAnalysisRecord, analysis_id)
+        record = (
+            await db.execute(
+                select(JdAnalysisRecord).where(
+                    JdAnalysisRecord.id == analysis_id,
+                    JdAnalysisRecord.user_id == user_id,
+                )
+            )
+        ).scalar_one_or_none()
     if record is None:
         raise HTTPException(status_code=404, detail="JD analysis not found")
     return serialize_jd_record(record)
 
 
 @router.post("/jd/analyses/{analysis_id}/resume")
-async def resume_jd_analysis(analysis_id: str):
+async def resume_jd_analysis(
+    analysis_id: str,
+    user_id: str = Depends(require_owner),
+):
     """Idempotently reclaim a task whose in-memory runner was lost."""
     async with async_session_factory() as db:
-        record = await db.get(JdAnalysisRecord, analysis_id)
+        record = (
+            await db.execute(
+                select(JdAnalysisRecord).where(
+                    JdAnalysisRecord.id == analysis_id,
+                    JdAnalysisRecord.user_id == user_id,
+                )
+            )
+        ).scalar_one_or_none()
         if record is None:
             raise HTTPException(status_code=404, detail="JD analysis not found")
         if record.status == "completed":
@@ -526,14 +589,17 @@ async def resume_jd_analysis(analysis_id: str):
 
 
 @router.delete("/jd/analyses/batch")
-async def batch_delete_jd_analyses(body: BatchDeleteRequest):
+async def batch_delete_jd_analyses(
+    body: BatchDeleteRequest,
+    user_id: str = Depends(require_owner),
+):
     """Delete selected JD analyses and their persisted image sources."""
     ids = list(dict.fromkeys(body.ids))
     async with async_session_factory() as db:
         records = (await db.execute(
             select(JdAnalysisRecord).where(
                 JdAnalysisRecord.id.in_(ids),
-                JdAnalysisRecord.user_id == body.user_id,
+                JdAnalysisRecord.user_id == user_id,
             )
         )).scalars().all()
         for record in records:
@@ -550,11 +616,17 @@ async def batch_delete_jd_analyses(body: BatchDeleteRequest):
 
 
 @router.delete("/jd/analyses/{analysis_id}", status_code=204)
-async def delete_jd_analysis(analysis_id: str):
+async def delete_jd_analysis(
+    analysis_id: str,
+    user_id: str = Depends(require_owner),
+):
     """Delete a saved JD analysis history item."""
     async with async_session_factory() as db:
         result = await db.execute(
-            select(JdAnalysisRecord).where(JdAnalysisRecord.id == analysis_id)
+            select(JdAnalysisRecord).where(
+                JdAnalysisRecord.id == analysis_id,
+                JdAnalysisRecord.user_id == user_id,
+            )
         )
         record = result.scalar_one_or_none()
         if record is None:

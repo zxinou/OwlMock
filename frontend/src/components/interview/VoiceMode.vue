@@ -1,8 +1,8 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { CircleAlert, LoaderCircle, Mic, MicOff, PhoneOff, Square, Volume2 } from 'lucide-vue-next'
+import { CheckCircle2, CircleAlert, Clock3, LoaderCircle, LockKeyhole, Mic, MicOff, PhoneOff, ServerCog, Square, Volume2 } from 'lucide-vue-next'
 import OwlLogo from '@/components/common/OwlLogo.vue'
-import { useVoiceInterview } from '@/composables/useVoiceInterview.js'
+import { runVoicePreflight, useVoiceInterview } from '@/composables/useVoiceInterview.js'
 import { isVoiceSupported } from '@/utils/voiceAudio.js'
 
 const props = defineProps({
@@ -18,10 +18,26 @@ const voiceRunning = ref(false)
 const elapsed = ref(0)
 const answerElapsed = ref(0)
 const transcriptContainer = ref(null)
+const preflight = ref(null)
+const preflightRunning = ref(false)
 let timer = null
 let answerTimer = null
 
 const voice = useVoiceInterview({ sessionId: props.sessionId, profileId: props.profileId })
+
+const preflightItems = computed(() => {
+  const result = preflight.value
+  return [
+    { icon: LockKeyhole, label: '安全连接', ready: result?.secureContext === true },
+    { icon: ServerCog, label: '语音服务', ready: result?.providerReady === true },
+    { icon: Mic, label: '麦克风', ready: result?.hasMicrophone === true },
+    {
+      icon: Clock3,
+      label: result?.maxSessionMinutes ? `${result.maxSessionMinutes} 分钟上限` : '时长待确认',
+      ready: Boolean(result?.maxSessionMinutes),
+    },
+  ]
+})
 
 const formattedTime = computed(() => {
   const minutes = Math.floor(elapsed.value / 60)
@@ -46,6 +62,7 @@ const latestAnswer = computed(() => {
 
 const controlLabel = computed(() => {
   if (!voiceRunning.value) {
+    if (preflightRunning.value) return '正在检查设备'
     if (voice.connecting) return '正在连接'
     return voice.error ? '重新连接' : '开始语音面试'
   }
@@ -66,13 +83,14 @@ const statusLabel = computed(() => {
     thinking: '正在整理回答',
     speaking: '面试官正在提问',
     interrupted: '已打断，继续回答',
+    disconnected: '连接已断开',
     error: '连接异常',
   }
   return labels[voice.interactionState] || controlLabel.value
 })
 
 const controlDisabled = computed(() => {
-  if (!voiceRunning.value) return !supported || voice.connecting
+  if (!voiceRunning.value) return !supported || voice.connecting || preflightRunning.value
   return props.paused || ['waiting', 'submitting'].includes(voice.answerState)
 })
 
@@ -109,13 +127,16 @@ watch(() => voice.connected, (connected) => {
 
 async function startVoice() {
   if (!supported || voiceRunning.value) return
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    stream.getTracks().forEach((track) => track.stop())
-  } catch {
-    voice.hintText = '无法访问麦克风，请先允许浏览器使用麦克风'
+  preflightRunning.value = true
+  const result = await runVoicePreflight()
+  preflight.value = result
+  preflightRunning.value = false
+  if (!result.ok) {
+    voice.error = result.message
+    voice.hintText = result.message
     return
   }
+  voice.error = null
   voiceRunning.value = true
   await voice.connect()
   if (voice.connected) {
@@ -207,6 +228,18 @@ onUnmounted(() => {
         <span>{{ voice.error }}</span>
       </div>
 
+      <div v-if="preflight" class="voice-preflight" aria-label="语音面试环境检查">
+        <div
+          v-for="item in preflightItems"
+          :key="item.label"
+          class="voice-preflight__item"
+          :class="{ ready: item.ready }"
+        >
+          <component :is="item.ready ? CheckCircle2 : item.icon" :size="15" />
+          <span>{{ item.label }}</span>
+        </div>
+      </div>
+
       <div class="voice-waveform" :class="{ active: voice.waveformActive, recording: voice.answerState === 'recording' }" aria-hidden="true">
         <span v-for="number in 20" :key="number"></span>
       </div>
@@ -293,6 +326,9 @@ onUnmounted(() => {
 .voice-heading h2 { font-size:1.15rem; }
 .voice-heading p { margin-top:.35rem; color:var(--color-ink-muted); font-size:.78rem; }
 .voice-error { width:100%; display:flex; align-items:center; justify-content:center; gap:.45rem; min-height:2.25rem; padding:.45rem .75rem; border:1px solid color-mix(in srgb,var(--color-accent) 28%,var(--color-border)); border-radius:var(--radius-md); color:#a94339; background:color-mix(in srgb,var(--color-accent) 7%,var(--color-surface)); font-size:.73rem; }
+.voice-preflight { width:100%; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.45rem; }
+.voice-preflight__item { min-width:0; display:flex; align-items:center; justify-content:center; gap:.35rem; padding:.5rem; border:1px solid var(--color-border-light); border-radius:var(--radius-md); color:var(--color-ink-muted); background:var(--color-surface); font-size:.68rem; font-weight:650; }
+.voice-preflight__item.ready { color:var(--color-primary); border-color:color-mix(in srgb,var(--color-primary) 24%,var(--color-border)); background:color-mix(in srgb,var(--color-primary) 6%,var(--color-white)); }
 .voice-waveform { height:2.25rem; display:flex; align-items:center; gap:3px; opacity:.2; }
 .voice-waveform span { width:3px; height:6px; border-radius:2px; background:var(--color-primary); }
 .voice-waveform.recording { opacity:.55; }
@@ -324,5 +360,5 @@ onUnmounted(() => {
 .voice-timer { color:var(--color-ink-muted); font-family:var(--font-mono); font-size:.75rem; }
 .spin { animation:spin 1s linear infinite; } @keyframes spin { to { transform:rotate(360deg); } }
 :global(.dark) .voice-avatar__face, :global(.dark) .voice-icon-control { background:var(--color-surface); }
-@media (max-width:640px) { .voice-page { padding:1rem; } .voice-container { padding:1rem 0; } .voice-secondary-controls { position:static; margin-left:.65rem; } .voice-controls { width:100%; } }
+@media (max-width:640px) { .voice-page { padding:1rem; } .voice-container { padding:1rem 0; } .voice-preflight { grid-template-columns:repeat(2,minmax(0,1fr)); } .voice-secondary-controls { position:static; margin-left:.65rem; } .voice-controls { width:100%; } }
 </style>

@@ -21,6 +21,7 @@ class ContextBuilder:
         events: list[FrontendEvent],
         current_input: str | None = None,
         resume_content: str | None = None,
+        job_description: str | None = None,
         user_id: str | None = None,
         resume_id: str | None = None,
         github_repos: list[str] | None = None,
@@ -44,6 +45,7 @@ class ContextBuilder:
         # 1. System prompt (with resume + memory injection)
         system_prompt = self._build_system_prompt(
             profile, resume_content=resume_content,
+            job_description=job_description,
             user_id=user_id, resume_id=resume_id,
             github_repos=github_repos,
         )
@@ -63,6 +65,7 @@ class ContextBuilder:
         self,
         profile: AgentProfile,
         resume_content: str | None = None,
+        job_description: str | None = None,
         user_id: str | None = None,
         resume_id: str | None = None,
         github_repos: list[str] | None = None,
@@ -83,6 +86,9 @@ class ContextBuilder:
                 base_prompt += f"- **{skill_id}**: {summary}\n"
 
         # Inject resume content
+        if job_description:
+            base_prompt += f"\n\n## 目标岗位 JD\n{job_description}\n"
+
         if resume_content:
             base_prompt += f"\n\n## 用户简历\n{resume_content}\n"
 
@@ -133,7 +139,6 @@ class ContextBuilder:
     def _build_history(self, events: list[FrontendEvent]) -> list[dict]:
         """Build conversation history from session events."""
         messages = []
-        current_assistant_text = ""
 
         for event in events:
             if event.type in (EventType.USER_TEXT, EventType.USER_TRANSCRIPT):

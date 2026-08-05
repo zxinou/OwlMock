@@ -10,6 +10,7 @@ const route = useRoute()
 const router = useRouter()
 const taskId = route.params.taskId
 const task = useResumeMatchTask()
+const taskLayout = computed(() => route.params.projectId ? 'div' : AnalysisLayout)
 
 const steps = [
   { key: 'extracting', title: '读取简历证据', detail: '识别经历、项目、技能与量化成果', icon: FileScan },
@@ -41,7 +42,7 @@ async function retry() {
 </script>
 
 <template>
-  <AnalysisLayout>
+  <component :is="taskLayout">
     <nav class="match-task-nav">
       <router-link :to="{ name: 'resume' }"><ArrowLeft :size="16" />返回简历匹配</router-link>
       <router-link :to="{ name: 'jd' }"><LayoutGrid :size="16" />前往其他模块</router-link>
@@ -74,7 +75,7 @@ async function retry() {
         </div>
       </div>
     </section>
-  </AnalysisLayout>
+  </component>
 </template>
 
 <style scoped>

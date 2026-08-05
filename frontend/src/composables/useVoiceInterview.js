@@ -8,6 +8,104 @@ const SUBMIT_TIMEOUT_MS = 35000
 const SPEECH_CONFIRM_FRAMES = 2
 const PREBUFFER_CHUNKS = 4
 
+function isLocalHostname(hostname = '') {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+}
+
+export async function runVoicePreflight({
+  windowRef = globalThis.window,
+  navigatorRef = globalThis.navigator,
+  client = api,
+} = {}) {
+  const secureContext = Boolean(windowRef?.isSecureContext)
+    || isLocalHostname(windowRef?.location?.hostname)
+  const result = {
+    ok: false,
+    code: null,
+    secureContext,
+    providerReady: false,
+    permission: 'prompt',
+    hasMicrophone: false,
+    maxSessionMinutes: null,
+    message: '',
+  }
+
+  if (!secureContext) {
+    return {
+      ...result,
+      code: 'secure_context_required',
+      message: '语音面试需要 HTTPS 安全连接，请通过 HTTPS 打开 OwlMock',
+    }
+  }
+
+  const mediaDevices = navigatorRef?.mediaDevices
+  if (!mediaDevices?.getUserMedia || !mediaDevices?.enumerateDevices) {
+    return {
+      ...result,
+      code: 'microphone_unsupported',
+      message: '当前浏览器不支持麦克风采集，请使用最新版 Chrome 或 Edge',
+    }
+  }
+
+  try {
+    const status = await client.getSystemStatus()
+    const voiceCapability = status?.capabilities?.voice || {}
+    result.providerReady = Boolean(voiceCapability.ready)
+    result.maxSessionMinutes = Number(voiceCapability.max_session_minutes) || null
+  } catch {
+    return {
+      ...result,
+      code: 'provider_status_unavailable',
+      message: '无法检查语音服务状态，请确认后端服务可用后重试',
+    }
+  }
+
+  if (!result.providerReady) {
+    return {
+      ...result,
+      code: 'provider_not_ready',
+      message: '语音服务尚未配置，请先配置 DashScope API Key',
+    }
+  }
+
+  try {
+    const permission = await navigatorRef.permissions?.query?.({ name: 'microphone' })
+    if (permission?.state) result.permission = permission.state
+  } catch {
+    // Some browsers do not expose microphone permissions through Permissions API.
+  }
+
+  let stream = null
+  try {
+    stream = await mediaDevices.getUserMedia({ audio: true })
+    result.permission = 'granted'
+    const devices = await mediaDevices.enumerateDevices()
+    result.hasMicrophone = devices.some((device) => device.kind === 'audioinput')
+  } catch (error) {
+    const denied = error?.name === 'NotAllowedError' || result.permission === 'denied'
+    return {
+      ...result,
+      permission: denied ? 'denied' : result.permission,
+      code: denied ? 'microphone_permission_denied' : 'microphone_unavailable',
+      message: denied
+        ? '麦克风权限被拒绝，请在浏览器地址栏中允许访问后重试'
+        : '无法打开麦克风，请检查设备是否被其他应用占用',
+    }
+  } finally {
+    stream?.getTracks?.().forEach((track) => track.stop())
+  }
+
+  if (!result.hasMicrophone) {
+    return {
+      ...result,
+      code: 'microphone_not_found',
+      message: '没有检测到可用麦克风，请连接设备后重试',
+    }
+  }
+
+  return { ...result, ok: true }
+}
+
 export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) {
   const connected = ref(false)
   const connecting = ref(false)
@@ -369,13 +467,19 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
           player?.destroy()
           player = null
           avatarSpeaking.value = false
-          answerState.value = 'waiting'
 
           if (!settled) {
+            answerState.value = 'retry'
+            interactionState.value = 'disconnected'
             settle(reject, new Error(`WebSocket 已关闭 (${event.code})`))
           } else if (wasConnected && event.code !== 1000) {
             error.value = '语音连接已断开，请重新连接'
             hintText.value = error.value
+            answerState.value = 'retry'
+            interactionState.value = 'disconnected'
+          } else {
+            answerState.value = 'waiting'
+            interactionState.value = 'waiting'
           }
         }
       })
@@ -385,6 +489,8 @@ export function useVoiceInterview({ sessionId, profileId, userId = 'default' }) 
       connected.value = false
       error.value = e.message || '连接失败'
       hintText.value = error.value
+      answerState.value = 'retry'
+      interactionState.value = 'disconnected'
       const socket = ws
       ws = null
       if (socket) {

@@ -1,10 +1,31 @@
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
 import { TYPE_TO_PROFILE } from '@/data/interview.js'
 
+export async function createConfiguredSession(client, {
+  projectId,
+  profileId,
+  mode,
+  resumeId,
+  githubRepoIds,
+}) {
+  if (projectId) {
+    if (resumeId) {
+      await client.updateProject(projectId, { current_resume_id: resumeId })
+    }
+    return client.createProjectSession(projectId, {
+      profile_id: profileId,
+      mode,
+      github_repo_ids: githubRepoIds,
+    })
+  }
+  return client.createSession({ profileId, mode, resumeId, githubRepoIds })
+}
+
 export function useInterviewConfig() {
   const router = useRouter()
+  const route = useRoute()
 
   const resumes = ref([])
   const resumesLoading = ref(false)
@@ -21,6 +42,7 @@ export function useInterviewConfig() {
 
   const selectedResume = ref(null)
   const selectedType = ref('comprehensive')
+  const selectedMode = ref('text')
   const selectedGithubRepos = ref([])
 
   const isConfigValid = computed(() => selectedType.value !== null)
@@ -63,13 +85,15 @@ export function useInterviewConfig() {
 
     try {
       const profileId = TYPE_TO_PROFILE[selectedType.value]
-      const result = await api.createSession({
+      const projectId = typeof route.query.projectId === 'string' ? route.query.projectId : null
+      const result = await createConfiguredSession(api, {
+        projectId,
         profileId,
-        mode: 'text',
+        mode: selectedMode.value,
         resumeId: selectedResume.value,
         githubRepoIds: selectedGithubRepos.value,
       })
-      router.push(`/interview/${result.session_id}?type=${selectedType.value}`)
+      router.push(`/interview/${result.session_id}?type=${selectedType.value}&projectId=${projectId || ''}`)
     } catch (e) {
       console.error('Failed to create session:', e)
       startError.value = e.message || '创建面试会话失败，请重试'
@@ -95,6 +119,7 @@ export function useInterviewConfig() {
     interviewTypes,
     selectedResume,
     selectedType,
+    selectedMode,
     isConfigValid,
     starting,
     startError,

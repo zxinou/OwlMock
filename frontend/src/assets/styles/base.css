@@ -91,6 +91,10 @@
   /* Layout */
   --max-width: 1200px;
   --nav-height: 72px;
+  --app-sidebar-width: 238px;
+  --app-sidebar-collapsed-width: 76px;
+  --app-topbar-height: 70px;
+  --app-mobile-topbar-height: 60px;
 }
 
 /* ---- Dark Mode ---- */
@@ -124,7 +128,9 @@
   html {
     font-family: var(--font-body);
     font-size: 16px;
+    min-width: 320px;
     scroll-behavior: smooth;
+    color-scheme: light;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background: var(--color-base);
@@ -136,6 +142,11 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    letter-spacing: 0;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
@@ -182,6 +193,15 @@
     font-size: inherit;
   }
 
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--color-secondary) 78%, white);
+    outline-offset: 3px;
+  }
+
   ::selection {
     background: rgba(45, 107, 101, 0.25);
   }
@@ -190,7 +210,80 @@
 /* ---- Global Component Overrides ---- */
 .dark .nav-glass,
 .dark .topbar-glass {
-  background: rgba(15, 14, 12, 0.85) !important;
+  background: rgba(18, 35, 33, 0.92) !important;
+}
+
+body.app-navigation-open {
+  overflow: hidden;
+}
+
+.workspace-empty {
+  min-height: calc(100vh - var(--app-topbar-height) - 7rem);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 0;
+  border-top: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.workspace-empty__icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 1.25rem;
+  color: var(--color-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+}
+
+.workspace-empty__eyebrow {
+  margin-bottom: 0.4rem;
+  color: var(--color-primary);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.workspace-empty h1 {
+  font-size: 1.9rem;
+}
+
+.workspace-empty__copy {
+  margin-top: 0.55rem;
+  color: var(--color-ink-muted);
+  font-size: 0.85rem;
+}
+
+.workspace-empty__action {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 1.4rem;
+  padding: 0 0.9rem;
+  color: #fff;
+  background: #173f3b;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.workspace-empty__action:hover {
+  background: #2d6b65;
+}
+
+.dark .workspace-empty__action {
+  color: #17312f;
+  background: var(--color-secondary);
+}
+
+@media (max-width: 720px) {
+  .workspace-empty {
+    min-height: calc(100vh - var(--app-mobile-topbar-height) - 5rem);
+  }
 }
 
 /* ---- Component Utilities ---- */

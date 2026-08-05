@@ -7,10 +7,12 @@ from collections.abc import AsyncIterator
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from starlette.websockets import WebSocketDisconnect
 
 from agent.llm.base import BaseLLM
 from agent.llm.events import Done, TextDelta, Usage
 from api.app import app
+from security.session import SESSION_COOKIE, SessionSigner
 
 
 class FakeLLM(BaseLLM):
@@ -34,6 +36,9 @@ class FakeLLM(BaseLLM):
 def client():
     """Create a test client."""
     with TestClient(app) as test_client:
+        signer = SessionSigner.from_settings(app.state.settings)
+        app.state.session_signer = signer
+        test_client.cookies.set(SESSION_COOKIE, signer.issue())
         yield test_client
 
 
@@ -93,17 +98,17 @@ async def test_get_session_events(async_client: AsyncClient):
 
 
 def test_websocket_connection(client: TestClient):
-    """Test: WebSocket connection and message exchange."""
-    with client.websocket_connect("/ws/voice/missing-session") as websocket:
-        event = websocket.receive_json()
+    """Missing or foreign sessions are rejected before a voice socket opens."""
+    with pytest.raises(WebSocketDisconnect) as error:
+        with client.websocket_connect("/ws/voice/missing-session"):
+            pass
 
-    assert event["type"] == "error"
-    assert event["payload"]["code"] == "session_not_found"
+    assert error.value.code == 4404
 
 
 def test_health_check(client):
     """Test: health check endpoint."""
-    response = client.get("/")
+    response = client.get("/api/health/live")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"

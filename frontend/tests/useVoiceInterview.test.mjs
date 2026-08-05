@@ -2,6 +2,58 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createServer } from 'vite'
 
+test('voice preflight checks secure context, provider, permission, and microphone device', async (t) => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  t.after(() => vite.close())
+  const { runVoicePreflight } = await vite.ssrLoadModule('/src/composables/useVoiceInterview.js')
+
+  const stopped = []
+  const result = await runVoicePreflight({
+    windowRef: { isSecureContext: true, location: { hostname: 'owlmock.example' } },
+    navigatorRef: {
+      permissions: { query: async () => ({ state: 'granted' }) },
+      mediaDevices: {
+        getUserMedia: async () => ({ getTracks: () => [{ stop: () => stopped.push(true) }] }),
+        enumerateDevices: async () => [{ kind: 'audioinput', deviceId: 'mic-1' }],
+      },
+    },
+    client: {
+      getSystemStatus: async () => ({
+        capabilities: { voice: { ready: true, max_session_minutes: 15 } },
+      }),
+    },
+  })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.permission, 'granted')
+  assert.equal(result.hasMicrophone, true)
+  assert.equal(result.providerReady, true)
+  assert.equal(result.maxSessionMinutes, 15)
+  assert.equal(stopped.length, 1)
+
+  const blocked = await runVoicePreflight({
+    windowRef: { isSecureContext: false, location: { hostname: 'owlmock.example' } },
+    navigatorRef: {},
+    client: { getSystemStatus: async () => ({ capabilities: { voice: { ready: false } } }) },
+  })
+  assert.equal(blocked.ok, false)
+  assert.equal(blocked.code, 'secure_context_required')
+})
+
+test('session restoration accepts persisted modes and returns to its project', async (t) => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  t.after(() => vite.close())
+  const { normalizeSessionMode, sessionReturnPath } = await vite.ssrLoadModule(
+    '/src/utils/interviewHelpers.js',
+  )
+
+  assert.equal(normalizeSessionMode('voice'), 'voice')
+  assert.equal(normalizeSessionMode('text'), 'text')
+  assert.equal(normalizeSessionMode('unknown'), 'text')
+  assert.equal(sessionReturnPath('project-42'), '/projects/project-42')
+  assert.equal(sessionReturnPath(null), '/interview')
+})
+
 test('hybrid voice interview keeps listening, supports manual finish and interruption', async (t) => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
   t.after(() => vite.close())
@@ -23,6 +75,11 @@ test('hybrid voice interview keeps listening, supports manual finish and interru
 
     close() {
       this.readyState = 3
+    }
+
+    emitClose(code = 1006) {
+      this.readyState = 3
+      this.onclose?.({ code })
     }
 
     emit(type, payload = {}) {
@@ -119,6 +176,11 @@ test('hybrid voice interview keeps listening, supports manual finish and interru
   socket.emit('user.transcript', { item_id: 'user-1', text: '我负责了核心模块的设计' })
   assert.equal(voice.liveUserText, '')
   assert.equal(voice.transcriptEntries.at(-1).text, '我负责了核心模块的设计')
+
+  socket.emitClose(1006)
+  assert.equal(voice.interactionState, 'disconnected')
+  assert.equal(voice.answerState, 'retry')
+  assert.match(voice.error, /重新连接/)
 
   voice.disconnect()
 })

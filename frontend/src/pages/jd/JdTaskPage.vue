@@ -13,6 +13,7 @@ const route = useRoute()
 const router = useRouter()
 const taskId = route.params.taskId
 const task = useJdTask()
+const taskLayout = computed(() => route.params.projectId ? 'div' : AnalysisLayout)
 
 const steps = [
   { key: 'extracting', title: '识别岗位信息', detail: '职位、公司、地点与薪资', icon: FileSearch },
@@ -48,7 +49,7 @@ async function retry() {
 </script>
 
 <template>
-  <AnalysisLayout>
+  <component :is="taskLayout">
     <div class="jd-task-nav">
       <router-link to="/analysis/jd"><ArrowLeft :size="16" />返回 JD 列表</router-link>
       <router-link to="/analysis/github"><LayoutGrid :size="16" />前往其他模块</router-link>
@@ -96,7 +97,7 @@ async function retry() {
         </div>
       </div>
     </section>
-  </AnalysisLayout>
+  </component>
 </template>
 
 <style scoped>

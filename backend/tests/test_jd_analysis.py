@@ -303,7 +303,7 @@ class TestJdHistoryEndpoints:
 
         row = JdAnalysisRecord(
             id="jd-delete-1",
-            user_id="user-1",
+            user_id="default",
             text="Frontend engineer JD",
             result_json='{"requirements":[],"implicit_expectations":[],"red_flags":[],"suggestions":[]}',
         )

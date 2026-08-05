@@ -7,18 +7,20 @@ import logging
 import os
 import uuid
 from pathlib import Path
+from trace import trace_analysis_request
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from agent.llm.providers.openai_compatible import build_multimodal_message
 from agent.llm.router import chat_structured_with_fallback
 from agent.profile_loader import ProfileLoader
+from api.deps import require_owner
+from config.settings import settings
 from service.resume_media import extract_resume_text, prepare_resume_images
 from storage.db.engine import async_session_factory
 from storage.db.models import Resume, ResumeMatchRecord
-from trace import trace_analysis_request
 
 router = APIRouter(tags=["resumes"])
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ MIME_TYPES = {
     "jpg": "image/jpeg",
 }
 MAX_FILE_SIZE = 10 * 1024 * 1024
-RESUME_ROOT = Path("storage/resumes")
+RESUME_ROOT = Path(settings.RESUME_ROOT)
 ANALYSIS_UNAVAILABLE = (
     "\u5206\u6790\u7ed3\u679c\u6682\u65f6\u65e0\u6cd5\u751f\u6210"
     "\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
@@ -81,7 +83,10 @@ class ResumeAnalysis(BaseModel):
 
 
 @router.post("/resumes/upload")
-async def upload_resume(file: UploadFile, user_id: str = "default"):
+async def upload_resume(
+    file: UploadFile,
+    user_id: str = Depends(require_owner),
+):
     """Upload a resume file (PDF, PNG, JPG)."""
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
@@ -130,7 +135,7 @@ async def upload_resume(file: UploadFile, user_id: str = "default"):
 
 
 @router.get("/resumes")
-async def list_resumes(user_id: str = "default"):
+async def list_resumes(user_id: str = Depends(require_owner)):
     """List all resumes for a user."""
     async with async_session_factory() as db:
         result = await db.execute(
@@ -153,10 +158,15 @@ async def list_resumes(user_id: str = "default"):
 
 
 @router.get("/resumes/{resume_id}")
-async def get_resume(resume_id: str):
+async def get_resume(resume_id: str, user_id: str = Depends(require_owner)):
     """Get resume detail with analysis result if available."""
     async with async_session_factory() as db:
-        result = await db.execute(select(Resume).where(Resume.id == resume_id))
+        result = await db.execute(
+            select(Resume).where(
+                Resume.id == resume_id,
+                Resume.user_id == user_id,
+            )
+        )
         resume = result.scalar_one_or_none()
 
     if not resume:
@@ -180,10 +190,15 @@ async def get_resume(resume_id: str):
 
 
 @router.delete("/resumes/{resume_id}", status_code=204)
-async def delete_resume(resume_id: str):
+async def delete_resume(resume_id: str, user_id: str = Depends(require_owner)):
     """Delete a resume file and its DB record."""
     async with async_session_factory() as db:
-        result = await db.execute(select(Resume).where(Resume.id == resume_id))
+        result = await db.execute(
+            select(Resume).where(
+                Resume.id == resume_id,
+                Resume.user_id == user_id,
+            )
+        )
         resume = result.scalar_one_or_none()
 
         if not resume:
@@ -193,7 +208,10 @@ async def delete_resume(resume_id: str):
             os.remove(resume.file_path)
 
         matches = (await db.execute(
-            select(ResumeMatchRecord.id).where(ResumeMatchRecord.resume_id == resume_id)
+            select(ResumeMatchRecord.id).where(
+                ResumeMatchRecord.resume_id == resume_id,
+                ResumeMatchRecord.user_id == user_id,
+            )
         )).scalars().all()
         if matches:
             from api.resume_matches import cancel_resume_match_task
@@ -201,7 +219,10 @@ async def delete_resume(resume_id: str):
             for match_id in matches:
                 await cancel_resume_match_task(match_id)
             await db.execute(
-                delete(ResumeMatchRecord).where(ResumeMatchRecord.resume_id == resume_id)
+                delete(ResumeMatchRecord).where(
+                    ResumeMatchRecord.resume_id == resume_id,
+                    ResumeMatchRecord.user_id == user_id,
+                )
             )
 
         await db.delete(resume)
@@ -209,10 +230,19 @@ async def delete_resume(resume_id: str):
 
 
 @router.post("/resumes/{resume_id}/analyze")
-async def analyze_resume(resume_id: str, force: bool = False):
+async def analyze_resume(
+    resume_id: str,
+    force: bool = False,
+    user_id: str = Depends(require_owner),
+):
     """Analyze a resume using multimodal LLM. Returns cached result unless force=true."""
     async with async_session_factory() as db:
-        result = await db.execute(select(Resume).where(Resume.id == resume_id))
+        result = await db.execute(
+            select(Resume).where(
+                Resume.id == resume_id,
+                Resume.user_id == user_id,
+            )
+        )
         resume = result.scalar_one_or_none()
 
         if not resume:

@@ -57,6 +57,7 @@ class AgentFactory:
         user_id: str = "default",
         db_session: object | None = None,
         resume_content: str = "",
+        job_description: str = "",
         github_repos: list[str] | None = None,
         resume_id: str = "",
         capy_note: str = "",
@@ -71,6 +72,7 @@ class AgentFactory:
                 profile_id, session_id,
                 user_id=user_id,
                 resume_content=resume_content,
+                job_description=job_description,
                 github_repos=github_repos,
                 resume_id=resume_id,
                 capy_note=capy_note,
@@ -80,6 +82,7 @@ class AgentFactory:
             user_id=user_id,
             db_session=db_session,
             resume_content=resume_content,
+            job_description=job_description,
             github_repos=github_repos,
             resume_id=resume_id,
         )
@@ -94,6 +97,7 @@ class AgentFactory:
         user_id: str = "default",
         db_session: object | None = None,
         resume_content: str = "",
+        job_description: str = "",
         github_repos: list[str] | None = None,
         resume_id: str = "",
     ) -> ReActAgent:
@@ -116,6 +120,7 @@ class AgentFactory:
             user_id=user_id,
             session_id=session_id,
             resume_content=resume_content,
+            job_description=job_description,
             github_repos=github_repos or [],
             resume_id=resume_id,
         )
@@ -131,6 +136,7 @@ class AgentFactory:
         *,
         user_id: str = "default",
         resume_content: str = "",
+        job_description: str = "",
         github_repos: list[str] | None = None,
         resume_id: str = "",
         capy_note: str = "",
@@ -147,7 +153,7 @@ class AgentFactory:
         realtime_llm = self._create_realtime_llm(profile)
         tools = self._get_tools(profile, allow_list={"save_real_question"})
         instructions = self._build_realtime_instructions(
-            profile, resume_content, github_repos or [], capy_note
+            profile, resume_content, github_repos or [], capy_note, job_description
         )
 
         return RealtimeAgent(
@@ -213,6 +219,7 @@ class AgentFactory:
         resume_content: str,
         github_repos: list,
         capy_note: str,
+        job_description: str = "",
     ) -> str:
         """Build instructions for the realtime agent."""
         parts = []
@@ -224,6 +231,9 @@ class AgentFactory:
                 parts.append(prompt_path.read_text(encoding="utf-8"))
         except Exception:
             pass
+
+        if job_description:
+            parts.append(f"[目标岗位 JD]\n{job_description}")
 
         if resume_content:
             parts.append(f"[简历]\n{resume_content}")

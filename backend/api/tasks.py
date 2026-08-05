@@ -4,14 +4,15 @@ import json
 import logging
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 
+from api.deps import require_owner
 from service.task_service import TaskStatus, task_service
 from storage.db.engine import async_session_factory
 from storage.db.models import JdAnalysisRecord, RepoAnalysis, ResumeMatchRecord
-from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -35,28 +36,33 @@ class TaskStatusResponse(BaseModel):
     error: str | None = None
 
 
+async def _owned_task_record(task_id: str, user_id: str):
+    async with async_session_factory() as db:
+        for model in (RepoAnalysis, JdAnalysisRecord, ResumeMatchRecord):
+            result = await db.execute(
+                select(model).where(
+                    model.id == task_id,
+                    model.user_id == user_id,
+                )
+            )
+            record = result.scalar_one_or_none()
+            if record is not None:
+                return record
+    return None
+
+
 @router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str):
+async def get_task_status(
+    task_id: str,
+    user_id: str = Depends(require_owner),
+):
     """Get task status and result."""
+    analysis = await _owned_task_record(task_id, user_id)
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
     task = task_service.get_task(task_id)
     if task is None:
-        async with async_session_factory() as db:
-            result = await db.execute(
-                select(RepoAnalysis).where(RepoAnalysis.id == task_id)
-            )
-            analysis = result.scalar_one_or_none()
-            if analysis is None:
-                result = await db.execute(
-                    select(JdAnalysisRecord).where(JdAnalysisRecord.id == task_id)
-                )
-                analysis = result.scalar_one_or_none()
-            if analysis is None:
-                result = await db.execute(
-                    select(ResumeMatchRecord).where(ResumeMatchRecord.id == task_id)
-                )
-                analysis = result.scalar_one_or_none()
-        if analysis is None:
-            raise HTTPException(status_code=404, detail="Task not found")
         return TaskStatusResponse(
             task_id=analysis.id,
             status=analysis.status,
@@ -78,8 +84,13 @@ async def get_task_status(task_id: str):
 
 
 @router.get("/tasks/{task_id}/stream")
-async def stream_task_progress(task_id: str):
+async def stream_task_progress(
+    task_id: str,
+    user_id: str = Depends(require_owner),
+):
     """SSE endpoint for streaming task progress."""
+    if await _owned_task_record(task_id, user_id) is None:
+        raise HTTPException(status_code=404, detail="Task not found")
     task = task_service.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -128,8 +139,13 @@ async def stream_task_progress(task_id: str):
 
 
 @router.post("/tasks/{task_id}/cancel")
-async def cancel_task(task_id: str):
+async def cancel_task(
+    task_id: str,
+    user_id: str = Depends(require_owner),
+):
     """Cancel a running task."""
+    if await _owned_task_record(task_id, user_id) is None:
+        raise HTTPException(status_code=404, detail="Task not found")
     task = task_service.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
