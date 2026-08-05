@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from agent.llm.base import BaseLLM
 from agent.llm.events import Done, TextDelta, Usage
 from api.app import app
+from security.session import SESSION_COOKIE, SessionSigner
 
 
 class FakeLLM(BaseLLM):
@@ -34,6 +35,9 @@ class FakeLLM(BaseLLM):
 def client():
     """Create a test client."""
     with TestClient(app) as test_client:
+        signer = SessionSigner.from_settings(app.state.settings)
+        app.state.session_signer = signer
+        test_client.cookies.set(SESSION_COOKIE, signer.issue())
         yield test_client
 
 

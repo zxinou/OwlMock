@@ -7,6 +7,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
+from trace import trace_analysis_request
 
 from fastapi import APIRouter, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -15,10 +16,11 @@ from sqlalchemy import delete, select
 from agent.llm.providers.openai_compatible import build_multimodal_message
 from agent.llm.router import chat_structured_with_fallback
 from agent.profile_loader import ProfileLoader
+from config.settings import settings
+from security.session import OWNER_ID
 from service.resume_media import extract_resume_text, prepare_resume_images
 from storage.db.engine import async_session_factory
 from storage.db.models import Resume, ResumeMatchRecord
-from trace import trace_analysis_request
 
 router = APIRouter(tags=["resumes"])
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ MIME_TYPES = {
     "jpg": "image/jpeg",
 }
 MAX_FILE_SIZE = 10 * 1024 * 1024
-RESUME_ROOT = Path("storage/resumes")
+RESUME_ROOT = Path(settings.RESUME_ROOT)
 ANALYSIS_UNAVAILABLE = (
     "\u5206\u6790\u7ed3\u679c\u6682\u65f6\u65e0\u6cd5\u751f\u6210"
     "\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
@@ -96,7 +98,7 @@ async def upload_resume(file: UploadFile, user_id: str = "default"):
 
     resume_id = str(uuid.uuid4())
     ext = TYPE_EXTENSIONS[file.content_type]
-    user_dir = RESUME_ROOT / user_id
+    user_dir = RESUME_ROOT / OWNER_ID
     os.makedirs(user_dir, exist_ok=True)
     file_path = user_dir / f"{resume_id}.{ext}"
 
@@ -111,7 +113,7 @@ async def upload_resume(file: UploadFile, user_id: str = "default"):
     async with async_session_factory() as db:
         resume = Resume(
             id=resume_id,
-            user_id=user_id,
+            user_id=OWNER_ID,
             file_name=file.filename,
             file_path=str(file_path),
             file_type=ext,
@@ -135,7 +137,7 @@ async def list_resumes(user_id: str = "default"):
     async with async_session_factory() as db:
         result = await db.execute(
             select(Resume)
-            .where(Resume.user_id == user_id)
+            .where(Resume.user_id == OWNER_ID)
             .order_by(Resume.created_at.desc())
         )
         resumes = result.scalars().all()
@@ -156,7 +158,12 @@ async def list_resumes(user_id: str = "default"):
 async def get_resume(resume_id: str):
     """Get resume detail with analysis result if available."""
     async with async_session_factory() as db:
-        result = await db.execute(select(Resume).where(Resume.id == resume_id))
+        result = await db.execute(
+            select(Resume).where(
+                Resume.id == resume_id,
+                Resume.user_id == OWNER_ID,
+            )
+        )
         resume = result.scalar_one_or_none()
 
     if not resume:
@@ -183,7 +190,12 @@ async def get_resume(resume_id: str):
 async def delete_resume(resume_id: str):
     """Delete a resume file and its DB record."""
     async with async_session_factory() as db:
-        result = await db.execute(select(Resume).where(Resume.id == resume_id))
+        result = await db.execute(
+            select(Resume).where(
+                Resume.id == resume_id,
+                Resume.user_id == OWNER_ID,
+            )
+        )
         resume = result.scalar_one_or_none()
 
         if not resume:
@@ -212,7 +224,12 @@ async def delete_resume(resume_id: str):
 async def analyze_resume(resume_id: str, force: bool = False):
     """Analyze a resume using multimodal LLM. Returns cached result unless force=true."""
     async with async_session_factory() as db:
-        result = await db.execute(select(Resume).where(Resume.id == resume_id))
+        result = await db.execute(
+            select(Resume).where(
+                Resume.id == resume_id,
+                Resume.user_id == OWNER_ID,
+            )
+        )
         resume = result.scalar_one_or_none()
 
         if not resume:

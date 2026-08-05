@@ -3,15 +3,25 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from trace import init_tracing, is_tracing_enabled, shutdown_tracing
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agent.context.skill_loader import SkillLoader
 from agent.factory import AgentFactory
 from agent.profile_loader import ProfileLoader
 from api.auth import router as auth_router
 from api.chat import router as sse_router
+from api.deps import enforce_same_origin, require_owner
+from api.errors import (
+    http_exception_handler,
+    request_id_middleware,
+    unhandled_exception_handler,
+    validation_exception_handler,
+)
 from api.github_analysis import router as analysis_router
 from api.jd_analysis import router as jd_router
+from api.projects import router as projects_router
 from api.resume_analysis import router as resume_router
 from api.resume_matches import router as resume_matches_router
 from api.sessions import router as api_router
@@ -80,17 +90,23 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+app.middleware("http")(request_id_middleware)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # Include routers
-app.include_router(api_router, prefix="/api")
+protected = [Depends(require_owner), Depends(enforce_same_origin)]
+app.include_router(api_router, prefix="/api", dependencies=protected)
 app.include_router(auth_router, prefix="/api")
 app.include_router(system_router, prefix="/api")
-app.include_router(sse_router, prefix="/api")
-app.include_router(tasks_router, prefix="/api")
-app.include_router(analysis_router, prefix="/api")
-app.include_router(jd_router, prefix="/api")
-app.include_router(resume_router, prefix="/api")
-app.include_router(resume_matches_router, prefix="/api")
+app.include_router(sse_router, prefix="/api", dependencies=protected)
+app.include_router(tasks_router, prefix="/api", dependencies=protected)
+app.include_router(analysis_router, prefix="/api", dependencies=protected)
+app.include_router(jd_router, prefix="/api", dependencies=protected)
+app.include_router(projects_router, prefix="/api", dependencies=protected)
+app.include_router(resume_router, prefix="/api", dependencies=protected)
+app.include_router(resume_matches_router, prefix="/api", dependencies=protected)
 app.include_router(ws_router)
 
 

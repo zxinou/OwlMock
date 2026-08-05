@@ -7,11 +7,12 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 
+from security.session import OWNER_ID
 from service.task_service import TaskStatus, task_service
 from storage.db.engine import async_session_factory
 from storage.db.models import JdAnalysisRecord, RepoAnalysis, ResumeMatchRecord
-from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,18 @@ async def get_task_status(task_id: str):
             analysis = result.scalar_one_or_none()
             if analysis is None:
                 result = await db.execute(
-                    select(JdAnalysisRecord).where(JdAnalysisRecord.id == task_id)
+                    select(JdAnalysisRecord).where(
+                        JdAnalysisRecord.id == task_id,
+                        JdAnalysisRecord.user_id == OWNER_ID,
+                    )
                 )
                 analysis = result.scalar_one_or_none()
             if analysis is None:
                 result = await db.execute(
-                    select(ResumeMatchRecord).where(ResumeMatchRecord.id == task_id)
+                    select(ResumeMatchRecord).where(
+                        ResumeMatchRecord.id == task_id,
+                        ResumeMatchRecord.user_id == OWNER_ID,
+                    )
                 )
                 analysis = result.scalar_one_or_none()
         if analysis is None:

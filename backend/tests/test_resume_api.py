@@ -167,8 +167,8 @@ class TestResumeList:
     @pytest.mark.asyncio
     async def test_list_resumes(self, mock_db, db_session):
         """List resumes for a user."""
-        r1 = Resume(id="r1", user_id="user-1", file_name="a.pdf", file_type="pdf", content="")
-        r2 = Resume(id="r2", user_id="user-1", file_name="b.png", file_type="png", content="")
+        r1 = Resume(id="r1", user_id="default", file_name="a.pdf", file_type="pdf", content="")
+        r2 = Resume(id="r2", user_id="default", file_name="b.png", file_type="png", content="")
         r3 = Resume(id="r3", user_id="user-2", file_name="c.pdf", file_type="pdf", content="")
         db_session.add_all([r1, r2, r3])
         await db_session.commit()
@@ -202,7 +202,7 @@ class TestResumeDetail:
         """Get resume detail with analysis result."""
         r = Resume(
             id="r1",
-            user_id="user-1",
+            user_id="default",
             file_name="a.pdf",
             file_type="pdf",
             content="",
@@ -243,7 +243,7 @@ class TestResumeDelete:
         file_path.write_bytes(b"fake pdf")
 
         r = Resume(
-            id="r1", user_id="user-1", file_name="a.pdf", file_type="pdf",
+            id="r1", user_id="default", file_name="a.pdf", file_type="pdf",
             content="", file_path=str(file_path),
         )
         db_session.add(r)

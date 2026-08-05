@@ -37,6 +37,7 @@ htmlcov/
 # Secrets
 .env
 .env.*
+backend/storage/.session-secret
 !.env.example
 !backend/.env.example
 

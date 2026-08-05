@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from fastapi import Cookie, Depends, HTTPException, Request
 
 from agent.factory import AgentFactory
@@ -36,6 +38,25 @@ def require_owner(
             },
         )
     return OWNER_ID
+
+
+def enforce_same_origin(request: Request) -> None:
+    """Reject browser writes whose Origin does not match the request Host."""
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    origin = request.headers.get("origin")
+    if not origin:
+        return
+    parsed = urlsplit(origin)
+    request_host = request.headers.get("host", "").lower()
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() != request_host:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "cross_origin_request",
+                "message": "This request must come from the OwlMock application.",
+            },
+        )
 
 
 def get_agent_factory(request: Request) -> AgentFactory:

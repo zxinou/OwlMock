@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import uuid
+from trace import trace_analysis_request
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -15,12 +16,12 @@ from sqlalchemy import select
 from agent.llm.providers.openai_compatible import build_multimodal_message
 from agent.llm.router import chat_structured_with_fallback
 from agent.profile_loader import ProfileLoader
+from security.session import OWNER_ID
 from service.resume_match_report import ResumeMatchReport
 from service.resume_media import prepare_resume_images
 from service.task_service import task_service
 from storage.db.engine import async_session_factory
 from storage.db.models import JdAnalysisRecord, Resume, ResumeMatchRecord
-from trace import trace_analysis_request
 
 router = APIRouter(tags=["resume-matches"])
 logger = logging.getLogger(__name__)
@@ -276,13 +277,42 @@ async def cancel_resume_match_task(match_id: str) -> None:
         await task_service.cancel_task(match_id)
 
 
+async def create_pending_resume_match(
+    *,
+    user_id: str,
+    resume_id: str,
+    job_description: str,
+    jd_analysis_id: str | None = None,
+    project_id: str | None = None,
+) -> ResumeMatchRecord:
+    """Persist and schedule a match through the shared task pipeline."""
+    record = ResumeMatchRecord(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        resume_id=resume_id,
+        jd_analysis_id=jd_analysis_id,
+        project_id=project_id,
+        job_description=job_description.strip(),
+        result_json="{}",
+        status="pending",
+        stage="waiting",
+        progress=0.0,
+    )
+    async with async_session_factory() as db:
+        db.add(record)
+        await db.commit()
+    task_service.create_task(task_id=record.id)
+    _schedule_resume_match_task(record.id)
+    return record
+
+
 @router.post("/resume-matches/batch", status_code=202)
 async def submit_resume_match_batch(body: ResumeMatchBatchRequest):
     """Create one independent persisted match for every selected JD analysis."""
     jd_ids = list(dict.fromkeys(body.jd_analysis_ids))
     async with async_session_factory() as db:
         resume = await db.get(Resume, body.resume_id)
-        if resume is None or resume.user_id != body.user_id:
+        if resume is None or resume.user_id != OWNER_ID:
             raise HTTPException(status_code=404, detail="Resume not found")
         if not resume.file_path or not os.path.isfile(resume.file_path):
             raise HTTPException(status_code=400, detail="Resume file is unavailable")
@@ -295,7 +325,7 @@ async def submit_resume_match_batch(body: ResumeMatchBatchRequest):
             jd_id
             for jd_id in jd_ids
             if jd_id not in jd_by_id
-            or jd_by_id[jd_id].user_id != body.user_id
+            or jd_by_id[jd_id].user_id != OWNER_ID
             or jd_by_id[jd_id].status != "completed"
             or not jd_by_id[jd_id].result_json
             or jd_by_id[jd_id].result_json == "{}"
@@ -316,7 +346,7 @@ async def submit_resume_match_batch(body: ResumeMatchBatchRequest):
             record = ResumeMatchRecord(
                 id=str(uuid.uuid4()),
                 batch_id=batch_id,
-                user_id=body.user_id,
+                user_id=OWNER_ID,
                 resume_id=body.resume_id,
                 jd_analysis_id=jd.id,
                 job_description=jd.text,
@@ -356,7 +386,7 @@ async def batch_delete_resume_matches(body: BatchDeleteRequest):
         records = (await db.execute(
             select(ResumeMatchRecord).where(
                 ResumeMatchRecord.id.in_(ids),
-                ResumeMatchRecord.user_id == body.user_id,
+                ResumeMatchRecord.user_id == OWNER_ID,
             )
         )).scalars().all()
         for record in records:
@@ -370,24 +400,15 @@ async def batch_delete_resume_matches(body: BatchDeleteRequest):
 async def submit_resume_match(body: ResumeMatchRequest):
     async with async_session_factory() as db:
         resume = await db.get(Resume, body.resume_id)
-        if resume is None or resume.user_id != body.user_id:
+        if resume is None or resume.user_id != OWNER_ID:
             raise HTTPException(status_code=404, detail="Resume not found")
         if not resume.file_path or not os.path.isfile(resume.file_path):
             raise HTTPException(status_code=400, detail="Resume file is unavailable")
-        record = ResumeMatchRecord(
-            id=str(uuid.uuid4()),
-            user_id=body.user_id,
-            resume_id=body.resume_id,
-            job_description=body.job_description.strip(),
-            result_json="{}",
-            status="pending",
-            stage="waiting",
-            progress=0.0,
-        )
-        db.add(record)
-        await db.commit()
-    task_service.create_task(task_id=record.id)
-    _schedule_resume_match_task(record.id)
+    record = await create_pending_resume_match(
+        user_id=OWNER_ID,
+        resume_id=body.resume_id,
+        job_description=body.job_description,
+    )
     return {"task_id": record.id, "status": "pending", "stage": "waiting", "progress": 0.0}
 
 
@@ -396,7 +417,7 @@ async def list_resume_matches(user_id: str = "default"):
     async with async_session_factory() as db:
         rows = (await db.execute(
             select(ResumeMatchRecord)
-            .where(ResumeMatchRecord.user_id == user_id)
+            .where(ResumeMatchRecord.user_id == OWNER_ID)
             .order_by(ResumeMatchRecord.created_at.desc())
         )).scalars().all()
         values = []
@@ -427,7 +448,7 @@ async def get_resume_match_batch(batch_id: str, user_id: str = "default"):
         rows = (await db.execute(
             select(ResumeMatchRecord).where(
                 ResumeMatchRecord.batch_id == batch_id,
-                ResumeMatchRecord.user_id == user_id,
+                ResumeMatchRecord.user_id == OWNER_ID,
             )
         )).scalars().all()
         if not rows:
@@ -469,7 +490,14 @@ async def get_resume_match_batch(batch_id: str, user_id: str = "default"):
 @router.get("/resume-matches/{match_id}")
 async def get_resume_match(match_id: str):
     async with async_session_factory() as db:
-        record = await db.get(ResumeMatchRecord, match_id)
+        record = (
+            await db.execute(
+                select(ResumeMatchRecord).where(
+                    ResumeMatchRecord.id == match_id,
+                    ResumeMatchRecord.user_id == OWNER_ID,
+                )
+            )
+        ).scalar_one_or_none()
         if record is None:
             raise HTTPException(status_code=404, detail="Resume match not found")
         resume = await db.get(Resume, record.resume_id)
@@ -484,11 +512,23 @@ async def get_resume_match(match_id: str):
 @router.post("/resume-matches/{match_id}/resume")
 async def resume_resume_match(match_id: str):
     async with async_session_factory() as db:
-        record = await db.get(ResumeMatchRecord, match_id)
+        record = (
+            await db.execute(
+                select(ResumeMatchRecord).where(
+                    ResumeMatchRecord.id == match_id,
+                    ResumeMatchRecord.user_id == OWNER_ID,
+                )
+            )
+        ).scalar_one_or_none()
         if record is None:
             raise HTTPException(status_code=404, detail="Resume match not found")
         if record.status == "completed":
-            return {"task_id": match_id, "status": record.status, "stage": record.stage, "progress": record.progress}
+            return {
+                "task_id": match_id,
+                "status": record.status,
+                "stage": record.stage,
+                "progress": record.progress,
+            }
         if record.status == "failed":
             record.status = "pending"
             record.stage = "waiting"
@@ -500,13 +540,25 @@ async def resume_resume_match(match_id: str):
     if memory_task is None or memory_status in {"failed", "completed", "cancelled"}:
         task_service.create_task(task_id=match_id)
         _schedule_resume_match_task(match_id)
-    return {"task_id": match_id, "status": record.status, "stage": record.stage, "progress": record.progress}
+    return {
+        "task_id": match_id,
+        "status": record.status,
+        "stage": record.stage,
+        "progress": record.progress,
+    }
 
 
 @router.delete("/resume-matches/{match_id}", status_code=204)
 async def delete_resume_match(match_id: str):
     async with async_session_factory() as db:
-        record = await db.get(ResumeMatchRecord, match_id)
+        record = (
+            await db.execute(
+                select(ResumeMatchRecord).where(
+                    ResumeMatchRecord.id == match_id,
+                    ResumeMatchRecord.user_id == OWNER_ID,
+                )
+            )
+        ).scalar_one_or_none()
         if record is None:
             raise HTTPException(status_code=404, detail="Resume match not found")
         await cancel_resume_match_task(match_id)

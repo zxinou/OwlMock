@@ -24,33 +24,43 @@ from storage.session.store import SessionStore
 class SessionService:
     """Business logic for session management."""
 
-    def __init__(self, db_session: AsyncSession, session_store: SessionStore) -> None:
+    def __init__(
+        self,
+        db_session: AsyncSession,
+        session_store: SessionStore,
+        owner_id: str | None = None,
+    ) -> None:
         self.db = db_session
         self.store = session_store
+        self.owner_id = owner_id
 
     async def create_session(self, request: CreateSessionRequest) -> CreateSessionResponse:
         """Create a new interview session."""
         session_id = str(uuid.uuid4())
         now = datetime.utcnow()
+        user_id = self.owner_id or request.user_id
 
         # Create session in SQLite
         session = Session(
             id=session_id,
-            user_id=request.user_id,
+            user_id=user_id,
             profile_id=request.profile_id,
             status="active",
             mode=request.mode,
             created_at=now,
             updated_at=now,
             event_count=1,
+            project_id=request.project_id,
             resume_id=request.resume_id,
-            github_repo_ids=json.dumps(request.github_repo_ids) if request.github_repo_ids else None,
+            github_repo_ids=(
+                json.dumps(request.github_repo_ids) if request.github_repo_ids else None
+            ),
         )
         self.db.add(session)
         await self.db.commit()
 
         # Create JSONL file and write session.started event
-        self.store.create(request.user_id, session_id, request.profile_id)
+        self.store.create(user_id, session_id, request.profile_id)
 
         return CreateSessionResponse(
             session_id=session_id,
@@ -60,9 +70,10 @@ class SessionService:
 
     async def get_session(self, session_id: str) -> SessionMetadata | None:
         """Get session metadata by ID."""
-        result = await self.db.execute(
-            select(Session).where(Session.id == session_id)
-        )
+        query = select(Session).where(Session.id == session_id)
+        if self.owner_id:
+            query = query.where(Session.user_id == self.owner_id)
+        result = await self.db.execute(query)
         session = result.scalar_one_or_none()
 
         if session is None:
@@ -83,8 +94,9 @@ class SessionService:
         """List sessions with filtering and sorting."""
         query = select(Session)
 
-        if user_id:
-            query = query.where(Session.user_id == user_id)
+        effective_user_id = self.owner_id or user_id
+        if effective_user_id:
+            query = query.where(Session.user_id == effective_user_id)
         if status:
             query = query.where(Session.status == status)
         if profile_id:
@@ -105,8 +117,8 @@ class SessionService:
 
         # Get total count
         count_query = select(Session)
-        if user_id:
-            count_query = count_query.where(Session.user_id == user_id)
+        if effective_user_id:
+            count_query = count_query.where(Session.user_id == effective_user_id)
         if status:
             count_query = count_query.where(Session.status == status)
         if profile_id:
@@ -122,9 +134,10 @@ class SessionService:
 
     async def delete_session(self, session_id: str) -> bool:
         """Delete a session and its persisted event history."""
-        result = await self.db.execute(
-            select(Session).where(Session.id == session_id)
-        )
+        query = select(Session).where(Session.id == session_id)
+        if self.owner_id:
+            query = query.where(Session.user_id == self.owner_id)
+        result = await self.db.execute(query)
         session = result.scalar_one_or_none()
 
         if session is None:
@@ -139,9 +152,10 @@ class SessionService:
     async def append_event(self, session_id: str, event: FrontendEvent) -> None:
         """Append an event to a session and update metadata."""
         # Get session to find user_id
-        result = await self.db.execute(
-            select(Session).where(Session.id == session_id)
-        )
+        query = select(Session).where(Session.id == session_id)
+        if self.owner_id:
+            query = query.where(Session.user_id == self.owner_id)
+        result = await self.db.execute(query)
         session = result.scalar_one_or_none()
 
         if session is None:
@@ -178,9 +192,10 @@ class SessionService:
             memory_store: Optional MemoryStore for writing memory files
             finalize_data: Optional dict with capy_note, user_md, real_ques for memory
         """
-        result = await self.db.execute(
-            select(Session).where(Session.id == session_id)
-        )
+        query = select(Session).where(Session.id == session_id)
+        if self.owner_id:
+            query = query.where(Session.user_id == self.owner_id)
+        result = await self.db.execute(query)
         session = result.scalar_one_or_none()
 
         if session is None:
@@ -258,12 +273,14 @@ class SessionService:
 
     async def pause_session(self, session_id: str) -> None:
         """Pause a session (called when WS disconnects)."""
-        await self.db.execute(
+        query = (
             update(Session)
             .where(Session.id == session_id)
             .where(Session.status == "active")
-            .values(status="paused", updated_at=datetime.utcnow())
         )
+        if self.owner_id:
+            query = query.where(Session.user_id == self.owner_id)
+        await self.db.execute(query.values(status="paused", updated_at=datetime.utcnow()))
         await self.db.commit()
 
     def _to_metadata(self, session: Session) -> SessionMetadata:
@@ -275,6 +292,7 @@ class SessionService:
             status=session.status,
             mode=session.mode,
             resume_id=session.resume_id,
+            project_id=session.project_id,
             created_at=session.created_at.isoformat(),
             updated_at=session.updated_at.isoformat(),
             last_event_ts=session.last_event_ts.isoformat() if session.last_event_ts else None,

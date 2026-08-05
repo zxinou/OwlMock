@@ -3,13 +3,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 
 from agent.factory import AgentFactory, RealtimeNotConfigured
 from agent.loop import CancelToken
 from api.chat import _load_session_context
 from api.schemas import EventType, FrontendEvent
+from security.session import OWNER_ID, SESSION_COOKIE, SessionSigner
 from storage.session.store import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -44,25 +45,59 @@ async def voice_websocket(
 ):
     """WebSocket endpoint for voice mode.
 
-    Query params: profile (default: interviewer-technical), user_id (default: default), mode (default: voice)
+    Query params: profile (default: interviewer-technical), mode (default: voice).
 
     For text mode, use SSE endpoints:
     - POST /api/sessions/{id}/messages
     - GET /api/sessions/{id}/stream
     """
+    signer = getattr(websocket.app.state, "session_signer", None)
+    if signer is None:
+        signer = SessionSigner.from_settings(websocket.app.state.settings)
+        websocket.app.state.session_signer = signer
+    token = websocket.cookies.get(SESSION_COOKIE)
+    if not token or signer.verify(token) is None:
+        await websocket.close(code=4401, reason="Authentication required")
+        return
+
+    origin = websocket.headers.get("origin")
+    host = websocket.headers.get("host", "").lower()
+    if origin:
+        from urllib.parse import urlsplit
+
+        parsed = urlsplit(origin)
+        if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() != host:
+            await websocket.close(code=4403, reason="Cross-origin request rejected")
+            return
+
     await websocket.accept()
 
     agent_factory: AgentFactory = websocket.app.state.agent_factory
     session_store: SessionStore = websocket.app.state.session_store
 
     profile_id = websocket.query_params.get("profile", "interviewer-technical")
-    user_id = websocket.query_params.get("user_id", "default")
+    user_id = OWNER_ID
     mode = websocket.query_params.get("mode", "voice")
 
     if mode == "voice":
-        await _handle_voice_mode(websocket, agent_factory, session_store, session_id, profile_id, user_id)
+        await _handle_voice_mode(
+            websocket,
+            agent_factory,
+            session_store,
+            session_id,
+            profile_id,
+            user_id,
+        )
     else:
-        await _handle_text_mode(websocket, agent_factory, session_store, session_id, profile_id, user_id, mode)
+        await _handle_text_mode(
+            websocket,
+            agent_factory,
+            session_store,
+            session_id,
+            profile_id,
+            user_id,
+            mode,
+        )
 
 
 async def _handle_voice_mode(
@@ -109,8 +144,16 @@ async def _handle_voice_mode(
     except RealtimeNotConfigured as e:
         await _ws_send_error(websocket, "realtime_not_configured", str(e))
         return
-    except Exception as e:
-        await _ws_send_error(websocket, "agent_creation_failed", str(e))
+    except Exception as error:
+        logger.error(
+            "Failed to create realtime interview agent type=%s",
+            type(error).__name__,
+        )
+        await _ws_send_error(
+            websocket,
+            "agent_creation_failed",
+            "Realtime interview service unavailable",
+        )
         return
 
     # Run agent
@@ -118,10 +161,19 @@ async def _handle_voice_mode(
         await agent.run(websocket)
     except WebSocketDisconnect:
         logger.info("Voice client disconnected from session %s", session_id)
-    except Exception as e:
-        logger.error("Voice agent error: %s", e, exc_info=True)
-        code = "realtime_not_configured" if isinstance(e, RealtimeNotConfigured) else "agent_error"
-        await _ws_send_error(websocket, code, str(e))
+    except Exception as error:
+        logger.error("Voice interview agent failed type=%s", type(error).__name__)
+        code = (
+            "realtime_not_configured"
+            if isinstance(error, RealtimeNotConfigured)
+            else "agent_error"
+        )
+        message = (
+            str(error)
+            if isinstance(error, RealtimeNotConfigured)
+            else "Realtime interview request failed"
+        )
+        await _ws_send_error(websocket, code, message)
 
 
 async def _handle_text_mode(
@@ -168,7 +220,7 @@ async def _handle_text_mode(
                 try:
                     msg = WSMessage.model_validate_json(data)
                 except ValidationError:
-                    logger.warning(f"Invalid message format: {data}")
+                    logger.warning("Invalid websocket message format")
                     continue
 
                 if msg.type == "user.text":
@@ -197,19 +249,25 @@ async def _handle_text_mode(
             except WebSocketDisconnect:
                 logger.info(f"Client disconnected from session {session_id}")
                 break
-            except Exception as e:
-                logger.error(f"Error processing message: {e}")
+            except Exception as error:
+                logger.error(
+                    "Websocket message processing failed type=%s",
+                    type(error).__name__,
+                )
                 await websocket.send_text(
                     FrontendEvent(
                         type=EventType.ERROR,
-                        payload={"code": "processing_error", "message": str(e)},
+                        payload={
+                            "code": "processing_error",
+                            "message": "The message could not be processed",
+                        },
                     ).model_dump_json()
                 )
 
     except WebSocketDisconnect:
         logger.info(f"Client disconnected from session {session_id}")
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+    except Exception as error:
+        logger.error("Websocket session failed type=%s", type(error).__name__)
     finally:
         if cancel_token:
             cancel_token.cancel()

@@ -67,13 +67,13 @@
 - Modify: `backend/api/sessions.py`
 - Test: `backend/tests/test_projects_api.py`
 
-- [ ] Write failing API tests for create/list/detail/edit/archive, current JD/resume validation, dashboard aggregation, and rejection of nonexistent or archived projects.
-- [ ] Implement project CRUD with server-owned `user_id="default"`; archive via `PATCH {"archived":true}` and never cascade-delete assets.
-- [ ] Add project-scoped JD submission, resume matching, and session creation endpoints that reuse existing task/service logic rather than duplicate model calls.
-- [ ] Return a project aggregate containing current JD, current resume, latest completed match, recent sessions, and derived three-step status.
-- [ ] Keep generic history endpoints compatible while removing public `user_id` trust from all mutations and reads.
-- [ ] Run project tests and the full backend suite.
-- [ ] Commit as `feat: add job project workflow api`.
+- [x] Write failing API tests for create/list/detail/edit/archive, current JD/resume validation, dashboard aggregation, and rejection of nonexistent or archived projects.
+- [x] Implement project CRUD with server-owned `user_id="default"`; archive via `PATCH {"archived":true}` and never cascade-delete assets.
+- [x] Add project-scoped JD submission, resume matching, and session creation endpoints that reuse existing task/service logic rather than duplicate model calls.
+- [x] Return a project aggregate containing current JD, current resume, latest completed match, recent sessions, and derived three-step status.
+- [x] Keep generic history endpoints compatible while removing public `user_id` trust from all mutations and reads.
+- [x] Run project tests and the full backend suite.
+- [x] Commit as `feat: add job project workflow api`.
 
 ### Task 4: Protect Existing REST, SSE, Upload, and WebSocket Surfaces
 
@@ -89,12 +89,12 @@
 - Test: `backend/tests/test_auth_surface.py`
 - Test: `backend/tests/test_realtime_auth.py`
 
-- [ ] Add a route inventory test that asserts every non-public HTTP route depends on owner auth and every WebSocket rejects missing/invalid cookies before accept.
-- [ ] Enforce same-origin checks for unsafe requests and remove all client-controlled `user_id` behavior.
-- [ ] Validate record ownership on every detail, update, delete, SSE, resume, and task endpoint.
-- [ ] Add stable error payloads `{code,message,request_id}` and redact model/file content from server errors.
-- [ ] Run backend security and regression suites.
-- [ ] Commit as `fix: enforce owner boundary across api surfaces`.
+- [x] Add a route inventory test that asserts every non-public HTTP route depends on owner auth and every WebSocket rejects missing/invalid cookies before accept.
+- [x] Enforce same-origin checks for unsafe requests and remove all client-controlled `user_id` behavior.
+- [x] Validate record ownership on every detail, update, delete, SSE, resume, and task endpoint.
+- [x] Add stable error payloads `{code,message,request_id}` and redact model/file content from server errors.
+- [x] Run backend security and regression suites.
+- [x] Commit as `fix: enforce owner boundary across api surfaces`.
 
 ### Task 5: Authentication UI and Production App Shell
 

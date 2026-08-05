@@ -14,6 +14,7 @@ from agent.factory import AgentFactory
 from agent.loop import CancelToken
 from api.deps import get_agent_factory, get_session_store
 from api.schemas import EventType, FrontendEvent
+from security.session import OWNER_ID
 from storage.db.engine import async_session_factory
 from storage.db.models import RepoAnalysis, Resume, Session
 from storage.session.store import SessionStore
@@ -62,7 +63,10 @@ async def _load_session_context(session_id: str) -> dict:
     """
     async with async_session_factory() as db:
         result = await db.execute(
-            select(Session).where(Session.id == session_id)
+            select(Session).where(
+                Session.id == session_id,
+                Session.user_id == OWNER_ID,
+            )
         )
         session = result.scalar_one_or_none()
 
@@ -159,9 +163,10 @@ async def send_message(
                     session_id, ctx["user_id"],
                 )
             )
-        except Exception as e:
+        except Exception as error:
             state["is_running"] = False
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.error("Failed to create interview agent type=%s", type(error).__name__)
+            raise HTTPException(status_code=503, detail="Interview service unavailable")
 
     return {"status": "ok", "session_id": session_id}
 
@@ -200,8 +205,9 @@ async def chat(
             github_repos=ctx["github_repos"],
             resume_id=ctx["resume_id"],
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as error:
+        logger.error("Failed to create interview agent type=%s", type(error).__name__)
+        raise HTTPException(status_code=503, detail="Interview service unavailable")
 
     # Run agent and collect all events
     collected_events = []
@@ -218,9 +224,9 @@ async def chat(
             # Capture the final text
             if event.type == EventType.ASSISTANT_TEXT_DONE:
                 response_text = event.payload.get("text", "")
-    except Exception as e:
-        logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as error:
+        logger.error("Interview chat failed type=%s", type(error).__name__)
+        raise HTTPException(status_code=500, detail="Interview request failed")
 
     return ChatResponse(
         text=response_text,
@@ -248,11 +254,11 @@ async def _run_agent(
             # Persist events that should be saved
             if session_store._should_persist(event):
                 session_store.append_event(user_id, session_id, event)
-    except Exception as e:
-        logger.error(f"Agent error: {e}")
+    except Exception as error:
+        logger.error("Interview agent failed type=%s", type(error).__name__)
         error_event = FrontendEvent(
             type=EventType.ERROR,
-            payload={"code": "agent_error", "message": str(e)},
+            payload={"code": "agent_error", "message": "Interview request failed"},
         )
         await state["event_queue"].put(error_event)
     finally:
@@ -280,7 +286,10 @@ async def stream_events(
     # Load session to get actual user_id
     async with async_session_factory() as db:
         result = await db.execute(
-            select(Session).where(Session.id == session_id)
+            select(Session).where(
+                Session.id == session_id,
+                Session.user_id == OWNER_ID,
+            )
         )
         session = result.scalar_one_or_none()
     if session is None:

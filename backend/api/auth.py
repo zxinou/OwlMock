@@ -5,7 +5,12 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from api.deps import get_runtime_settings, get_session_signer, require_owner
+from api.deps import (
+    enforce_same_origin,
+    get_runtime_settings,
+    get_session_signer,
+    require_owner,
+)
 from config.settings import Settings
 from security.session import OWNER_ID, SESSION_COOKIE, SessionSigner
 
@@ -22,6 +27,7 @@ async def login(
     response: Response,
     runtime_settings: Settings = Depends(get_runtime_settings),
     signer: SessionSigner = Depends(get_session_signer),
+    _: None = Depends(enforce_same_origin),
 ) -> dict[str, object]:
     configured_password = runtime_settings.OWLMOCK_ADMIN_PASSWORD
     if not configured_password:
@@ -63,6 +69,8 @@ async def logout(
     response: Response,
     request: Request,
     runtime_settings: Settings = Depends(get_runtime_settings),
+    _: str = Depends(require_owner),
+    __: None = Depends(enforce_same_origin),
 ) -> dict[str, bool]:
     response.delete_cookie(
         SESSION_COOKIE,
