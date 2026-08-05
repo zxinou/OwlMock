@@ -13,7 +13,8 @@ from api.deps import enforce_same_origin, require_owner
 from storage.db.models import Base, Resume
 
 PUBLIC_HTTP_ROUTES = {
-    ("GET", "/"),
+    ("GET", "/{full_path:path}"),
+    ("HEAD", "/{full_path:path}"),
     ("POST", "/api/auth/login"),
     ("GET", "/api/health/live"),
     ("GET", "/api/health/ready"),
