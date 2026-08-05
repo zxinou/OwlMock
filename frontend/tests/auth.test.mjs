@@ -177,3 +177,38 @@ test('API normalizes network failures into structured errors', async (t) => {
     return true
   })
 })
+
+test('theme store keeps the saved dark preference during bootstrap', async (t) => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  t.after(() => vite.close())
+
+  const originalWindow = globalThis.window
+  const originalDocument = globalThis.document
+  const originalLocalStorage = globalThis.localStorage
+  let appliedDark = false
+  const storage = new Map([['owlmock-dark', '1']])
+
+  globalThis.window = { matchMedia: () => ({ matches: false }) }
+  globalThis.document = {
+    documentElement: {
+      classList: {
+        toggle(_name, value) { appliedDark = value },
+      },
+    },
+  }
+  globalThis.localStorage = {
+    getItem(key) { return storage.get(key) ?? null },
+    setItem(key, value) { storage.set(key, value) },
+  }
+  t.after(() => {
+    globalThis.window = originalWindow
+    globalThis.document = originalDocument
+    globalThis.localStorage = originalLocalStorage
+  })
+
+  const { useTheme } = await vite.ssrLoadModule(`/src/stores/theme.js?saved=${Date.now()}`)
+
+  assert.equal(useTheme().state.dark, true)
+  assert.equal(appliedDark, true)
+  assert.equal(storage.get('owlmock-dark'), '1')
+})

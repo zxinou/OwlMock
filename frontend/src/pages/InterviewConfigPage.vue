@@ -11,6 +11,7 @@ const {
   interviewTypes,
   selectedResume,
   selectedType,
+  selectedMode,
   isConfigValid,
   starting,
   handleStartInterview,
@@ -76,6 +77,23 @@ function formatDate(iso) {
 
       <div class="bg-white dark:bg-surface border border-border-light dark:border-border rounded-xl p-6">
         <div class="flex items-center gap-2 mb-4 font-semibold text-ink">
+          <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold">3</div>
+          <span>面试方式</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all" :class="selectedMode === 'text' ? 'border-primary bg-primary/5' : 'border-border-light dark:border-border hover:border-primary/50'">
+            <input v-model="selectedMode" type="radio" value="text" class="w-4 h-4 text-primary">
+            <div><div class="font-medium text-ink">文字面试</div><div class="text-sm text-ink-muted">稳定、安静，适合先梳理表达</div></div>
+          </label>
+          <label class="flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all" :class="selectedMode === 'voice' ? 'border-primary bg-primary/5' : 'border-border-light dark:border-border hover:border-primary/50'">
+            <input v-model="selectedMode" type="radio" value="voice" class="w-4 h-4 text-primary">
+            <div><div class="font-medium text-ink">语音面试</div><div class="text-sm text-ink-muted">带麦克风预检与手动轮次控制</div></div>
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-surface border border-border-light dark:border-border rounded-xl p-6">
+        <div class="flex items-center gap-2 mb-4 font-semibold text-ink">
           <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold">2</div>
           <span>面试类型</span>
         </div>
@@ -98,7 +116,7 @@ function formatDate(iso) {
 
       <div class="bg-white dark:bg-surface border border-border-light dark:border-border rounded-xl p-6">
         <div class="flex items-center gap-2 mb-1 font-semibold text-ink">
-          <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold">3</div>
+          <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold">4</div>
           <span>GitHub 仓库（可选）</span>
         </div>
         <p class="text-xs text-ink-muted ml-10 mb-4">选择已分析的仓库，让面试官了解你的项目经验</p>

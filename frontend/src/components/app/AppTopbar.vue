@@ -60,7 +60,7 @@ const pageTitle = computed(() => {
       >
         <LogOut :size="18" />
       </button>
-      <router-link :to="{ name: 'jd' }" class="app-topbar__primary">
+      <router-link :to="{ name: 'project-create' }" class="app-topbar__primary">
         <Plus :size="17" :stroke-width="2.2" />
         <span>新建岗位</span>
       </router-link>

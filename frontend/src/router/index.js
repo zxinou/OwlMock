@@ -1,41 +1,18 @@
-import { h } from 'vue'
 import {
-  RouterLink,
   createMemoryHistory,
   createRouter,
   createWebHistory,
 } from 'vue-router'
-import { ArrowRight, BriefcaseBusiness } from 'lucide-vue-next'
 
 import { setUnauthorizedHandler } from '@/api/index.js'
 import { authStore } from '@/stores/auth.js'
 import { createUnauthorizedRedirect, resolveAuthNavigation } from './authGuard.js'
 
-const ProjectIndexPlaceholder = {
-  name: 'ProjectIndexPlaceholder',
-  render() {
-    return h('section', { class: 'workspace-empty', 'aria-labelledby': 'projects-heading' }, [
-      h('div', { class: 'workspace-empty__icon', 'aria-hidden': 'true' }, [
-        h(BriefcaseBusiness, { size: 24, strokeWidth: 1.8 }),
-      ]),
-      h('p', { class: 'workspace-empty__eyebrow' }, '工作区'),
-      h('h1', { id: 'projects-heading' }, '岗位项目'),
-      h('p', { class: 'workspace-empty__copy' }, '暂无岗位项目'),
-      h(RouterLink, { to: { name: 'jd' }, class: 'workspace-empty__action' }, {
-        default: () => [
-          '分析岗位 JD',
-          h(ArrowRight, { size: 16, strokeWidth: 2 }),
-        ],
-      }),
-    ])
-  },
-}
-
 export const routes = [
   {
     path: '/',
     name: 'root',
-    component: ProjectIndexPlaceholder,
+    component: () => import('@/pages/projects/ProjectListPage.vue'),
     meta: { title: 'OwlMock', appShell: true, section: '岗位项目' },
   },
   {
@@ -47,8 +24,32 @@ export const routes = [
   {
     path: '/projects',
     name: 'projects',
-    component: ProjectIndexPlaceholder,
+    component: () => import('@/pages/projects/ProjectListPage.vue'),
     meta: { title: '岗位项目 - OwlMock', appShell: true, section: '岗位项目' },
+  },
+  {
+    path: '/projects/new',
+    name: 'project-create',
+    component: () => import('@/pages/projects/ProjectCreatePage.vue'),
+    meta: { title: '新建岗位 - OwlMock', appShell: true, section: '岗位项目' },
+  },
+  {
+    path: '/projects/:projectId/jd/tasks/:taskId',
+    name: 'project-jd-task',
+    component: () => import('@/pages/jd/JdTaskPage.vue'),
+    meta: { title: 'JD 分析进度 - OwlMock', section: '岗位项目' },
+  },
+  {
+    path: '/projects/:projectId/resume/tasks/:taskId',
+    name: 'project-resume-task',
+    component: () => import('@/pages/resume/ResumeMatchTaskPage.vue'),
+    meta: { title: '简历匹配进度 - OwlMock', section: '岗位项目' },
+  },
+  {
+    path: '/projects/:projectId',
+    name: 'project-workspace',
+    component: () => import('@/pages/projects/ProjectWorkspacePage.vue'),
+    meta: { title: '岗位工作台 - OwlMock', appShell: true, section: '岗位项目' },
   },
   {
     path: '/interview',

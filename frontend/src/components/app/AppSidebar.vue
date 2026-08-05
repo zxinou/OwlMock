@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   BriefcaseBusiness,
@@ -12,13 +12,15 @@ import {
 
 import OwlLogo from '@/components/common/OwlLogo.vue'
 
-defineProps({
+const props = defineProps({
   open: { type: Boolean, default: false },
 })
 
 defineEmits(['close'])
 
 const route = useRoute()
+const mobile = ref(false)
+let mobileMedia = null
 const navItems = [
   { label: '岗位项目', to: { name: 'projects' }, match: '/projects', icon: BriefcaseBusiness },
   { label: '简历库', to: { name: 'resume' }, match: '/analysis/resume', icon: FileUser },
@@ -27,10 +29,23 @@ const navItems = [
 ]
 
 const ownerInitials = computed(() => 'OW')
+const navigationHidden = computed(() => mobile.value && !props.open)
+
+function syncMobile(event) {
+  mobile.value = event.matches
+}
 
 function isActive(item) {
   return route.path.startsWith(item.match)
 }
+
+onMounted(() => {
+  mobileMedia = window.matchMedia('(max-width: 720px)')
+  syncMobile(mobileMedia)
+  mobileMedia.addEventListener('change', syncMobile)
+})
+
+onBeforeUnmount(() => mobileMedia?.removeEventListener('change', syncMobile))
 </script>
 
 <template>
@@ -38,11 +53,13 @@ function isActive(item) {
     id="app-navigation"
     class="app-sidebar"
     :class="{ 'app-sidebar--open': open }"
+    :aria-hidden="navigationHidden ? 'true' : undefined"
+    :inert="navigationHidden"
     aria-label="主导航"
   >
     <div class="app-sidebar__brand">
       <router-link :to="{ name: 'projects' }" class="app-sidebar__brand-link" @click="$emit('close')">
-        <span class="app-sidebar__logo"><OwlLogo :size="30" /></span>
+        <span class="app-sidebar__logo"><OwlLogo :size="30" style="filter: none; opacity: 1" /></span>
         <span class="app-sidebar__brand-name">OwlMock</span>
       </router-link>
       <button class="app-sidebar__close" type="button" aria-label="关闭导航" @click="$emit('close')">
@@ -134,11 +151,6 @@ function isActive(item) {
   overflow: hidden;
   background: #f7faf7;
   border-radius: 6px;
-}
-
-:global(.dark) .app-sidebar__logo :deep(.owl-avatar) {
-  filter: none;
-  opacity: 1;
 }
 
 .app-sidebar__brand-name,

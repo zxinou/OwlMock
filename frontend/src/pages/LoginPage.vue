@@ -30,13 +30,13 @@ async function submit() {
   <main class="login-page">
     <section class="login-page__brand" aria-labelledby="login-brand-title">
       <div class="login-page__brand-lockup">
-        <span class="login-page__logo"><OwlLogo :size="36" /></span>
+        <span class="login-page__logo"><OwlLogo :size="36" style="filter: none; opacity: 1" /></span>
         <span>OwlMock</span>
       </div>
 
       <div class="login-page__brand-copy">
         <div class="login-page__owl" aria-hidden="true">
-          <OwlLogo :size="136" />
+          <OwlLogo :size="136" style="filter: none; opacity: 1" />
         </div>
         <p>个人求职工作台</p>
         <h1 id="login-brand-title">把准备留在一个安静的空间里</h1>
@@ -47,7 +47,7 @@ async function submit() {
 
     <section class="login-page__form-panel" aria-labelledby="login-heading">
       <div class="login-page__mobile-brand">
-        <span class="login-page__logo"><OwlLogo :size="30" /></span>
+        <span class="login-page__logo"><OwlLogo :size="30" style="filter: none; opacity: 1" /></span>
         <strong>OwlMock</strong>
       </div>
 
@@ -136,12 +136,6 @@ async function submit() {
   overflow: hidden;
   background: #f7faf7;
   border-radius: 7px;
-}
-
-:global(.dark) .login-page__logo :deep(.owl-avatar),
-:global(.dark) .login-page__owl :deep(.owl-avatar) {
-  filter: none;
-  opacity: 1;
 }
 
 .login-page__brand-copy {
