@@ -1,10 +1,18 @@
 <script setup>
-import { ArrowDown, LogIn } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { ArrowDown, LayoutDashboard, LogIn } from 'lucide-vue-next'
 
+import UserAvatar from '@/components/app/UserAvatar.vue'
 import OwlLogo from '@/components/common/OwlLogo.vue'
 import { useScrollState } from '@/composables/useScrollState.js'
+import { authStore } from '@/stores/auth.js'
 
 const { scrolled } = useScrollState()
+const accountName = computed(() => (
+  authStore.user?.display_name
+  || authStore.user?.email?.split('@')[0]
+  || '我的账户'
+))
 </script>
 
 <template>
@@ -33,13 +41,34 @@ const { scrolled } = useScrollState()
       <!-- Right actions -->
       <div class="flex items-center gap-3">
         <router-link
+          v-if="authStore.ready && authStore.authenticated"
+          :to="{ name: 'projects' }"
+          class="landing-nav__account inline-flex items-center gap-2 text-sm font-semibold no-underline"
+          :aria-label="`${accountName}，进入工作台`"
+        >
+          <UserAvatar :user="authStore.user" :size="32" />
+          <span class="landing-nav__account-name">{{ accountName }}</span>
+        </router-link>
+        <router-link
+          v-else-if="authStore.ready"
           :to="{ name: 'login' }"
           class="landing-nav__login inline-flex items-center gap-2 text-sm font-medium transition-colors no-underline"
         >
           <LogIn :size="17" />
           <span>登录</span>
         </router-link>
+        <span v-else class="landing-nav__account-loading" aria-label="正在读取登录状态" />
+
+        <router-link
+          v-if="authStore.ready && authStore.authenticated"
+          :to="{ name: 'projects' }"
+          class="landing-nav__preview inline-flex items-center gap-2 text-sm font-semibold transition-all hover:-translate-y-px no-underline"
+        >
+          <LayoutDashboard :size="17" />
+          进入工作台
+        </router-link>
         <a
+          v-else
           href="#features"
           class="landing-nav__preview inline-flex items-center gap-2 text-sm font-semibold transition-all hover:-translate-y-px no-underline"
         >
@@ -64,8 +93,29 @@ const { scrolled } = useScrollState()
   color: var(--color-ink-light);
 }
 
-.landing-nav__login:hover {
+.landing-nav__login:hover,
+.landing-nav__account:hover {
   color: var(--color-primary);
+}
+
+.landing-nav__account {
+  min-height: 44px;
+  max-width: 190px;
+  color: var(--color-ink);
+}
+
+.landing-nav__account-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing-nav__account-loading {
+  width: 44px;
+  height: 32px;
+  display: inline-block;
+  background: var(--color-surface);
+  border-radius: 999px;
 }
 
 .landing-nav__preview {
@@ -82,17 +132,28 @@ const { scrolled } = useScrollState()
 
 @media (max-width: 560px) {
   .landing-nav__brand span,
-  .landing-nav__login span {
+  .landing-nav__login span,
+  .landing-nav__account-name {
     display: none;
   }
 
-  .landing-nav__login {
+  .landing-nav__login,
+  .landing-nav__account {
     width: 44px;
     justify-content: center;
   }
 
   .landing-nav__preview {
     padding-inline: 0.75rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .landing-nav__preview {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
   }
 }
 </style>

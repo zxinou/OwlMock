@@ -1,5 +1,18 @@
 <script setup>
-import { ArrowDown, LogIn, ShieldCheck } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { ArrowDown, LayoutDashboard, LogIn, ShieldCheck } from 'lucide-vue-next'
+
+import UserAvatar from '@/components/app/UserAvatar.vue'
+import { authStore } from '@/stores/auth.js'
+
+const accountName = computed(() => (
+  authStore.user?.display_name
+  || authStore.user?.email?.split('@')[0]
+  || '我的账户'
+))
+const accountDestination = computed(() => (
+  authStore.authenticated ? { name: 'projects' } : { name: 'login' }
+))
 </script>
 
 <template>
@@ -40,14 +53,17 @@ import { ArrowDown, LogIn, ShieldCheck } from 'lucide-vue-next'
             <ArrowDown :size="18" />
             开始使用
           </a>
-          <router-link :to="{ name: 'login' }" class="btn btn--secondary no-underline" style="font-size: var(--text-base)">
-            <LogIn :size="18" />
-            已有账户，登录
+          <router-link :to="accountDestination" class="btn btn--secondary hero-account-action no-underline" style="font-size: var(--text-base)">
+            <UserAvatar v-if="authStore.authenticated" :user="authStore.user" :size="24" />
+            <LogIn v-else :size="18" />
+            <span>{{ authStore.authenticated ? '进入工作台' : '已有账户，登录' }}</span>
+            <LayoutDashboard v-if="authStore.authenticated" :size="17" />
           </router-link>
         </div>
         <p class="hero-access-note justify-center lg:justify-start animate-hero-fade-up" style="animation-delay: 0.58s">
           <ShieldCheck :size="16" />
-          可直接查看全部功能介绍，实际使用时再登录或注册
+          <span v-if="authStore.authenticated">已登录为 {{ accountName }}，可以继续上次的求职准备</span>
+          <span v-else>可直接查看全部功能介绍，实际使用时再登录或注册</span>
         </p>
       </div>
 
@@ -86,6 +102,11 @@ import { ArrowDown, LogIn, ShieldCheck } from 'lucide-vue-next'
   margin-top: 1rem;
   color: var(--color-ink-muted);
   font-size: 0.82rem;
+}
+
+.hero-account-action {
+  min-width: 164px;
+  justify-content: center;
 }
 
 @media (max-width: 640px) {

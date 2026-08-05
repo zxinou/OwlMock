@@ -17,12 +17,16 @@ services:
       - "${OWLMOCK_PORT:-8000}:8000"
     volumes:
       - owlmock-data:/data
-    init: true
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - SETGID
+      - SETUID
     healthcheck:
       test:
         - CMD
