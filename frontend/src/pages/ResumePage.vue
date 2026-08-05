@@ -183,8 +183,8 @@ function toggleSelectAllHistory() {
   <AnalysisLayout>
     <header class="resume-page-head">
       <div>
-        <h1>简历匹配分析</h1>
-        <p>选择一份简历，与已经完成分析的多个岗位同时匹配。</p>
+        <h1>简历中心</h1>
+        <p>管理你的简历，并与已经完成分析的多个岗位同时匹配。</p>
       </div>
       <div class="resume-head-mark" aria-hidden="true"><BriefcaseBusiness :size="20" /></div>
     </header>

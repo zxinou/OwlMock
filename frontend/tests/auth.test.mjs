@@ -137,6 +137,29 @@ test('401 handling signs out and preserves the protected destination', async (t)
   ])
 })
 
+test('401 handling keeps anonymous visitors on public pages', async (t) => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  t.after(() => vite.close())
+  const { createUnauthorizedRedirect } = await vite.ssrLoadModule('/src/router/authGuard.js')
+
+  const auth = {
+    authenticated: true,
+    markSignedOut() { this.authenticated = false },
+  }
+  const replacements = []
+  const router = {
+    currentRoute: {
+      value: { name: 'root', fullPath: '/', meta: { public: true } },
+    },
+    async replace(location) { replacements.push(location) },
+  }
+
+  await createUnauthorizedRedirect(auth, router)()
+
+  assert.equal(auth.authenticated, false)
+  assert.deepEqual(replacements, [])
+})
+
 test('app router protects projects while keeping the public preview available to everyone', async (t) => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
   t.after(() => vite.close())

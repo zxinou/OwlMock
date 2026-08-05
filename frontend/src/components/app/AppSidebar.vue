@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   BriefcaseBusiness,
+  FileSearch,
   FileUser,
   Github,
   MessageSquareText,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-vue-next'
 
 import OwlLogo from '@/components/common/OwlLogo.vue'
+import UserAvatar from '@/components/app/UserAvatar.vue'
 import { authStore } from '@/stores/auth.js'
 
 const props = defineProps({
@@ -24,9 +26,10 @@ const mobile = ref(false)
 let mobileMedia = null
 const navItems = [
   { label: '岗位项目', to: { name: 'projects' }, match: '/projects', icon: BriefcaseBusiness },
-  { label: '简历库', to: { name: 'resume' }, match: '/analysis/resume', icon: FileUser },
-  { label: '面试记录', to: { name: 'interview-list' }, match: '/interview', icon: MessageSquareText },
+  { label: 'JD 分析', to: { name: 'jd' }, match: '/analysis/jd', icon: FileSearch },
+  { label: '简历中心', to: { name: 'resume' }, match: '/analysis/resume', icon: FileUser },
   { label: 'GitHub 分析', to: { name: 'github-list' }, match: '/analysis/github', icon: Github },
+  { label: '模拟面试', to: { name: 'interview-list' }, match: '/interview', icon: MessageSquareText },
 ]
 
 const accountName = computed(() => (
@@ -35,13 +38,6 @@ const accountName = computed(() => (
   || '我的求职空间'
 ))
 const accountDetail = computed(() => authStore.user?.email || '个人工作区')
-const ownerInitials = computed(() => accountName.value
-  .trim()
-  .split(/\s+/)
-  .map((part) => part.slice(0, 1))
-  .join('')
-  .slice(0, 2)
-  .toUpperCase())
 const navigationHidden = computed(() => mobile.value && !props.open)
 
 function syncMobile(event) {
@@ -81,7 +77,7 @@ onBeforeUnmount(() => mobileMedia?.removeEventListener('change', syncMobile))
     </div>
 
     <div class="app-sidebar__owner">
-      <span class="app-sidebar__avatar" aria-hidden="true">{{ ownerInitials }}</span>
+      <UserAvatar :user="authStore.user" :size="31" />
       <span class="app-sidebar__owner-copy">
         <strong>{{ accountName }}</strong>
         <small>{{ accountDetail }}</small>
@@ -198,20 +194,6 @@ onBeforeUnmount(() => mobileMedia?.removeEventListener('change', syncMobile))
   background: var(--color-white);
   border: 1px solid var(--color-border);
   border-radius: 7px;
-}
-
-.app-sidebar__avatar {
-  width: 31px;
-  height: 31px;
-  display: grid;
-  place-items: center;
-  flex: none;
-  color: var(--color-on-secondary);
-  background: var(--color-secondary);
-  border-radius: 50%;
-  font-family: var(--font-heading);
-  font-size: 0.66rem;
-  font-weight: 800;
 }
 
 .app-sidebar__owner-copy strong,

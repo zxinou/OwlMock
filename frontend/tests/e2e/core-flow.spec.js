@@ -18,6 +18,7 @@ async function fulfillJson(route, payload, status = 200) {
 
 test('lets visitors browse OwlMock before creating an account', async ({ page }) => {
   const apiRequests = []
+  await page.route('**/api/auth/session', (route) => fulfillJson(route, { authenticated: false }))
   page.on('request', (request) => {
     if (new URL(request.url()).pathname.startsWith('/api/')) apiRequests.push(request.url())
   })
@@ -26,7 +27,7 @@ test('lets visitors browse OwlMock before creating an account', async ({ page })
   await expect(page).toHaveURL('/')
   await expect(page.getByRole('heading', { name: /让求职变得\s*更有把握/ })).toBeVisible()
   await expect(page.getByText('可直接查看全部功能介绍，实际使用时再登录或注册')).toBeVisible()
-  await expect.poll(() => apiRequests).toEqual([])
+  await expect.poll(() => apiRequests.map((url) => new URL(url).pathname)).toEqual(['/api/auth/session'])
 
   await page.locator('section').first().getByRole('link', { name: '开始使用' }).click()
   await expect(page).toHaveURL('/#features')
@@ -92,6 +93,13 @@ test('signs in, opens protected projects, and signs out', async ({ page }) => {
   await expect(page).toHaveURL('/projects')
   await expect(page.getByRole('heading', { name: '把每个目标岗位，变成一套可持续的准备过程' })).toBeVisible()
   await expect(page.getByText('Frontend Engineer', { exact: true })).toBeVisible()
+
+  await page.goto('/')
+  const landingNavigation = page.getByRole('navigation')
+  await expect(landingNavigation.getByRole('link', { name: 'Person，进入工作台' })).toBeVisible()
+  await expect(landingNavigation.getByRole('link', { name: '登录' })).toHaveCount(0)
+  await landingNavigation.getByRole('link', { name: '进入工作台', exact: true }).click()
+  await expect(page).toHaveURL('/projects')
 
   await page.getByRole('button', { name: '退出登录' }).click()
   await expect(page).toHaveURL('/login')

@@ -1,5 +1,6 @@
 <script setup>
 import OwlLogo from '@/components/common/OwlLogo.vue'
+import { authStore } from '@/stores/auth.js'
 </script>
 
 <template>
@@ -12,7 +13,13 @@ import OwlLogo from '@/components/common/OwlLogo.vue'
       <ul class="flex gap-6 list-none m-0 p-0">
         <li><a href="#features" class="landing-footer__link text-sm transition-colors hover:text-primary" style="color: var(--color-ink-muted)">智能分析</a></li>
         <li><a href="#interview" class="landing-footer__link text-sm transition-colors hover:text-primary" style="color: var(--color-ink-muted)">模拟面试</a></li>
-        <li><router-link :to="{ name: 'login' }" class="landing-footer__link text-sm transition-colors hover:text-primary" style="color: var(--color-ink-muted)">登录</router-link></li>
+        <li>
+          <router-link
+            :to="authStore.authenticated ? { name: 'projects' } : { name: 'login' }"
+            class="landing-footer__link text-sm transition-colors hover:text-primary"
+            style="color: var(--color-ink-muted)"
+          >{{ authStore.authenticated ? '工作台' : '登录' }}</router-link>
+        </li>
       </ul>
     </div>
   </footer>

@@ -25,7 +25,7 @@ export function createUnauthorizedRedirect(auth, router) {
     auth.markSignedOut()
 
     const current = router.currentRoute.value
-    if (!current?.name || current.name === 'login') return
+    if (!current?.name || current.name === 'login' || current.meta?.public) return
 
     await router.replace({
       name: 'login',
