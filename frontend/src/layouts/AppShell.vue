@@ -108,8 +108,8 @@ onBeforeUnmount(() => {
   left: calc(var(--app-sidebar-width) + 1rem);
   z-index: 100;
   padding: 0.55rem 0.8rem;
-  color: #fff;
-  background: #173f3b;
+  color: var(--color-on-primary);
+  background: var(--color-primary);
   border-radius: 6px;
   transform: translateY(-180%);
   transition: transform var(--duration-fast);

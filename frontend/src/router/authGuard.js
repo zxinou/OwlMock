@@ -1,7 +1,6 @@
 export async function resolveAuthNavigation(to, auth) {
   if (to.name === 'root') {
-    if (!auth.ready) return true
-    return auth.authenticated ? { name: 'projects' } : true
+    return true
   }
   if (to.meta?.public) {
     if (!auth.ready) return true

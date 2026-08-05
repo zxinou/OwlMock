@@ -78,6 +78,7 @@ async function submit() {
           <span class="login-form__heading-icon" aria-hidden="true"><LockKeyhole :size="19" /></span>
           <p>{{ isRegister ? '创建账户' : '安全登录' }}</p>
           <h2 id="login-heading">{{ heading }}</h2>
+          <p v-if="isRegister" class="login-form__access-note">使用邮箱创建你的个人账户，不需要管理员账号。</p>
         </div>
 
         <div class="login-form__field">
@@ -175,9 +176,9 @@ async function submit() {
   flex-direction: column;
   padding: 2rem clamp(2rem, 6vw, 5rem);
   overflow: hidden;
-  color: #edf7f4;
-  background: #173f3b;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--color-rail-ink);
+  background: var(--color-rail);
+  border-right: 1px solid var(--color-border);
 }
 
 .login-page__brand-lockup,
@@ -197,7 +198,7 @@ async function submit() {
   place-items: center;
   flex: none;
   overflow: hidden;
-  background: #f7faf7;
+  background: var(--color-white);
   border-radius: 7px;
 }
 
@@ -212,10 +213,10 @@ async function submit() {
   display: grid;
   place-items: center;
   margin-bottom: 2rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  box-shadow: 18px 18px 0 rgba(213, 164, 63, 0.14);
+  box-shadow: 18px 18px 0 color-mix(in srgb, var(--color-secondary) 20%, transparent);
 }
 
 .login-page__brand-copy p {
@@ -227,13 +228,13 @@ async function submit() {
 
 .login-page__brand-copy h1 {
   max-width: 460px;
-  color: #f8fcfb;
+  color: var(--color-rail-ink);
   font-size: 2.2rem;
   line-height: 1.28;
 }
 
 .login-page__instance {
-  color: #9db9b3;
+  color: var(--color-rail-muted);
   font-size: 0.72rem;
 }
 
@@ -277,6 +278,13 @@ async function submit() {
 
 .login-form__heading h2 {
   font-size: 1.8rem;
+}
+
+.login-form__access-note {
+  margin-top: 0.6rem;
+  color: var(--color-ink-muted);
+  font-size: 0.76rem;
+  line-height: 1.6;
 }
 
 .login-form__field + .login-form__field {
@@ -363,8 +371,8 @@ async function submit() {
   justify-content: center;
   gap: 0.5rem;
   margin-top: 1.15rem;
-  color: #fff;
-  background: #173f3b;
+  color: var(--color-on-primary);
+  background: var(--color-primary);
   border-radius: 7px;
   font-size: 0.82rem;
   font-weight: 700;
@@ -372,7 +380,7 @@ async function submit() {
 }
 
 .login-form__submit:hover:not(:disabled) {
-  background: #2d6b65;
+  background: var(--color-primary-dark);
   transform: translateY(-1px);
 }
 
@@ -401,7 +409,7 @@ async function submit() {
 }
 
 :global(.dark) .login-form__submit {
-  color: #17312f;
+  color: var(--color-on-secondary);
   background: var(--color-secondary);
 }
 

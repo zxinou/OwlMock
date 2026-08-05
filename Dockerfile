@@ -29,9 +29,11 @@ WORKDIR /app/backend
 COPY --from=backend-deps --chown=owlmock:owlmock /app/backend/.venv ./.venv
 COPY --chown=owlmock:owlmock backend/ ./
 COPY --from=frontend-build --chown=owlmock:owlmock /build/frontend/dist /app/frontend/dist
+COPY --chown=root:root docker/entrypoint.sh /usr/local/bin/owlmock-entrypoint
 
 RUN mkdir -p /data \
-    && chown owlmock:owlmock /data
+    && chown owlmock:owlmock /data \
+    && chmod 0755 /usr/local/bin/owlmock-entrypoint
 
 ENV PATH="/app/backend/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -39,11 +41,10 @@ ENV PATH="/app/backend/.venv/bin:$PATH" \
     OWLMOCK_DATA_DIR=/data \
     PORT=8000
 
-USER owlmock
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/live', timeout=3)"]
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/owlmock-entrypoint"]
 CMD ["sh", "-c", "exec uvicorn api.app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --proxy-headers --forwarded-allow-ips='*' --timeout-graceful-shutdown 30"]

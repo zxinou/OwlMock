@@ -149,9 +149,9 @@ const pageTitle = computed(() => {
   justify-content: center;
   gap: 0.42rem;
   padding: 0 0.9rem;
-  color: #fff;
-  background: #173f3b;
-  border: 1px solid #173f3b;
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
   border-radius: 6px;
   font-size: 0.75rem;
   font-weight: 700;
@@ -159,12 +159,12 @@ const pageTitle = computed(() => {
 }
 
 .app-topbar__primary:hover {
-  background: #2d6b65;
-  border-color: #2d6b65;
+  background: var(--color-primary-dark);
+  border-color: var(--color-primary-dark);
 }
 
 :global(.dark) .app-topbar__primary {
-  color: #17312f;
+  color: var(--color-on-secondary);
   background: var(--color-secondary);
   border-color: var(--color-secondary);
 }
