@@ -1,8 +1,5 @@
 <script setup>
-import { useRouter } from 'vue-router'
 import OwlLogo from '@/components/common/OwlLogo.vue'
-
-const router = useRouter()
 </script>
 
 <template>
@@ -11,8 +8,8 @@ const router = useRouter()
       <!-- Section header -->
       <div class="text-center mb-16 reveal">
         <div
-          class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-4"
-          style="color: var(--color-primary); letter-spacing: 0.1em"
+          class="inline-flex items-center gap-2 text-xs font-semibold uppercase mb-4"
+          style="color: var(--color-primary)"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2 C4 2, 2 5, 2 8 C2 11, 4 14, 8 14 C12 14, 14 11, 14 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>
           模拟面试
@@ -26,7 +23,8 @@ const router = useRouter()
       <!-- Cards -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-[1000px] mx-auto">
         <!-- Text mode card -->
-        <div
+        <router-link
+          to="/interview"
           class="reveal relative overflow-hidden cursor-pointer transition-all border border-border-light hover:-translate-y-1 hover:shadow-lg"
           :style="{
             background: 'var(--color-white)',
@@ -35,10 +33,9 @@ const router = useRouter()
             transitionDuration: 'var(--duration-slow)',
             transitionTimingFunction: 'var(--ease-out)',
           }"
-          @click="router.push('/interview')"
         >
           <!-- Mode badge -->
-          <div class="inline-flex items-center gap-2 text-xs font-semibold rounded-full mb-6" style="padding: 0.25rem 0.75rem; background: #E2ECE7; color: #2D6B65">
+          <div class="inline-flex items-center gap-2 text-xs font-semibold rounded-full mb-6" style="padding: 0.25rem 0.75rem; background: var(--color-surface-alt); color: var(--color-primary)">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.2"/><line x1="5" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><line x1="5" y1="7.5" x2="8" y2="7.5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
             文字对话模式
           </div>
@@ -51,26 +48,27 @@ const router = useRouter()
 
           <!-- Chat preview -->
           <div class="p-6 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border-light); border-radius: var(--radius-lg)">
-            <div class="text-xs font-semibold uppercase tracking-wider mb-4" style="color: var(--color-ink-muted); letter-spacing: 0.08em">对话预览</div>
+            <div class="text-xs font-semibold uppercase mb-4" style="color: var(--color-ink-muted)">对话预览</div>
             <div class="flex flex-col gap-3">
               <div class="max-w-[85%] rounded-xl text-sm" style="padding: 0.75rem 1rem; background: var(--color-white); color: var(--color-ink); border: 1px solid var(--color-border-light); border-bottom-left-radius: 0.25rem; line-height: var(--leading-normal)">
                 你好！我看到你简历上有 React 项目经验，能介绍一下你在项目中遇到的最大技术挑战吗？
               </div>
-              <div class="max-w-[85%] self-end rounded-xl text-sm" style="padding: 0.75rem 1rem; background: var(--color-primary); color: var(--color-white); border-bottom-right-radius: 0.25rem; line-height: var(--leading-normal)">
+              <div class="max-w-[85%] self-end rounded-xl text-sm" style="padding: 0.75rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border-bottom-right-radius: 0.25rem; line-height: var(--leading-normal)">
                 主要是性能优化方面，列表渲染卡顿问题...
               </div>
               <div class="max-w-[85%] rounded-xl text-sm" style="padding: 0.75rem 1rem; background: var(--color-white); color: var(--color-ink); border: 1px solid var(--color-border-light); border-bottom-left-radius: 0.25rem; line-height: var(--leading-normal)">
                 很好，你具体用了哪些优化手段？虚拟列表还是其他方案？
               </div>
-              <div class="max-w-[85%] self-end rounded-xl text-sm" style="padding: 0.75rem 1rem; background: var(--color-primary); color: var(--color-white); border-bottom-right-radius: 0.25rem; line-height: var(--leading-normal)">
+              <div class="max-w-[85%] self-end rounded-xl text-sm" style="padding: 0.75rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border-bottom-right-radius: 0.25rem; line-height: var(--leading-normal)">
                 用了虚拟列表 + React.memo + useMemo 缓存计算结果
               </div>
             </div>
           </div>
-        </div>
+        </router-link>
 
         <!-- Voice mode card -->
-        <div
+        <router-link
+          to="/interview"
           class="reveal relative overflow-hidden cursor-pointer transition-all"
           style="transition-delay: 0.1s"
           :style="{
@@ -81,12 +79,9 @@ const router = useRouter()
             transitionDuration: 'var(--duration-slow)',
             transitionTimingFunction: 'var(--ease-out)',
           }"
-          @mouseenter="$event.currentTarget.style.transform='translateY(-4px)'; $event.currentTarget.style.boxShadow='var(--shadow-lg)'"
-          @mouseleave="$event.currentTarget.style.transform=''; $event.currentTarget.style.boxShadow=''"
-          @click="router.push('/interview')"
         >
           <!-- Mode badge -->
-          <div class="inline-flex items-center gap-2 text-xs font-semibold rounded-full mb-6" style="padding: 0.25rem 0.75rem; background: #F7EDCB; color: #8B6518">
+          <div class="inline-flex items-center gap-2 text-xs font-semibold rounded-full mb-6" style="padding: 0.25rem 0.75rem; background: color-mix(in srgb, var(--color-secondary) 24%, var(--color-white)); color: var(--color-on-secondary)">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="5" y="1" width="4" height="8" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M3 7 C3 10, 5 12, 7 12 C9 12, 11 10, 11 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/><line x1="7" y1="12" x2="7" y2="14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
             语音通话模式
           </div>
@@ -99,11 +94,11 @@ const router = useRouter()
 
           <!-- Voice preview -->
           <div class="p-6 rounded-xl text-center" style="background: var(--color-surface); border: 1px solid var(--color-border-light); border-radius: var(--radius-lg)">
-            <div class="text-xs font-semibold uppercase tracking-wider mb-4" style="color: var(--color-ink-muted); letter-spacing: 0.08em">语音交互</div>
+            <div class="text-xs font-semibold uppercase mb-4" style="color: var(--color-ink-muted)">语音交互</div>
             <div class="flex flex-col items-center gap-4">
               <!-- Avatar -->
               <div class="w-14 h-14 rounded-full flex items-center justify-center relative" style="background: var(--color-white); border: 1px solid var(--color-border)">
-                <OwlLogo :size="30" />
+                <OwlLogo :size="30" light />
               </div>
 
               <!-- Wave bars -->
@@ -114,7 +109,7 @@ const router = useRouter()
               <p class="text-sm" style="color: var(--color-ink-muted)">猫头鹰面试官正在聆听...</p>
             </div>
           </div>
-        </div>
+        </router-link>
       </div>
     </div>
   </section>

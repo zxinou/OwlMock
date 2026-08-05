@@ -1,5 +1,9 @@
+<script setup>
+import { ArrowDown, LogIn, ShieldCheck } from 'lucide-vue-next'
+</script>
+
 <template>
-  <section :style="{ paddingTop: 'calc(var(--nav-height) + 5rem)', paddingBottom: '5rem', overflow: 'hidden' }">
+  <section class="landing-hero">
     <div class="container grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
       <!-- Content -->
       <div class="text-center lg:text-left">
@@ -14,7 +18,7 @@
 
         <!-- Title -->
         <h1
-          class="font-bold mb-6 animate-hero-fade-up leading-[1.1] tracking-tight"
+          class="font-bold mb-6 animate-hero-fade-up leading-[1.1]"
           style="font-family: var(--font-heading); font-size: var(--text-hero); margin-bottom: 1.5rem; animation-delay: 0.2s"
         >
           让求职变得<br>
@@ -31,13 +35,20 @@
         </p>
 
         <!-- Actions -->
-        <div class="flex gap-4 justify-center lg:justify-start animate-hero-fade-up" style="animation-delay: 0.5s">
-          <router-link to="/interview" class="btn btn--primary no-underline" style="font-size: var(--text-base)">
-            <svg class="btn__icon" viewBox="0 0 18 18" fill="none"><path d="M9 3v12M3 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            免费开始
+        <div class="flex flex-wrap gap-4 justify-center lg:justify-start animate-hero-fade-up" style="animation-delay: 0.5s">
+          <a href="#features" class="btn btn--primary no-underline" style="font-size: var(--text-base)">
+            <ArrowDown :size="18" />
+            开始使用
+          </a>
+          <router-link :to="{ name: 'login' }" class="btn btn--secondary no-underline" style="font-size: var(--text-base)">
+            <LogIn :size="18" />
+            已有账户，登录
           </router-link>
-          <button class="btn btn--secondary" style="font-size: var(--text-base)">了解更多</button>
         </div>
+        <p class="hero-access-note justify-center lg:justify-start animate-hero-fade-up" style="animation-delay: 0.58s">
+          <ShieldCheck :size="16" />
+          可直接查看全部功能介绍，实际使用时再登录或注册
+        </p>
       </div>
 
       <!-- Illustration -->
@@ -46,6 +57,10 @@
           src="@/assets/owl_interviewer.png"
           alt="OwlMock 猫头鹰面试官在审阅简历"
           class="owl-interviewer-art w-full max-w-xl"
+          width="2142"
+          height="1537"
+          fetchpriority="high"
+          decoding="async"
         >
       </div>
     </div>
@@ -53,14 +68,30 @@
 </template>
 
 <style scoped>
+.landing-hero {
+  padding-top: calc(var(--nav-height) + 3.5rem);
+  padding-bottom: 4rem;
+  overflow: hidden;
+}
+
 .owl-interviewer-art {
   clip-path: inset(0 0 8% 0);
   mix-blend-mode: multiply;
 }
 
-html.dark .owl-interviewer-art {
-  filter: invert(1);
-  mix-blend-mode: screen;
-  opacity: 0.9;
+.hero-access-note {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  color: var(--color-ink-muted);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 640px) {
+  .landing-hero {
+    padding-top: calc(var(--nav-height) + 2.5rem);
+    padding-bottom: 3rem;
+  }
 }
 </style>

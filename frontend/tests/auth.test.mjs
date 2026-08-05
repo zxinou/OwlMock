@@ -99,7 +99,7 @@ test('route guard redirects anonymous users and keeps signed-in users out of log
   )
   assert.deepEqual(
     await resolveAuthNavigation({ name: 'root', fullPath: '/', meta: {} }, owner),
-    { name: 'projects' },
+    true,
   )
 })
 
@@ -137,7 +137,7 @@ test('401 handling signs out and preserves the protected destination', async (t)
   ])
 })
 
-test('app router protects projects and sends authenticated root visits to projects', async (t) => {
+test('app router protects projects while keeping the public preview available to everyone', async (t) => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
   t.after(() => vite.close())
   const { createAppRouter } = await vite.ssrLoadModule('/src/router/index.js')
@@ -159,7 +159,7 @@ test('app router protects projects and sends authenticated root visits to projec
     handleUnauthorized: false,
   })
   await ownerRouter.push('/')
-  assert.equal(ownerRouter.currentRoute.value.name, 'projects')
+  assert.equal(ownerRouter.currentRoute.value.name, 'root')
 })
 
 test('anonymous visitors can browse the public product preview before signing in', async (t) => {

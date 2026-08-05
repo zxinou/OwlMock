@@ -24,13 +24,17 @@ test('lets visitors browse OwlMock before creating an account', async ({ page })
   await page.goto('/')
 
   await expect(page).toHaveURL('/')
-  await expect(page.getByRole('heading', { name: '把每个目标岗位，变成一套可持续的准备过程' })).toBeVisible()
-  await expect(page.getByText('账户数据彼此隔离，免费开始使用')).toBeVisible()
+  await expect(page.getByRole('heading', { name: /让求职变得\s*更有把握/ })).toBeVisible()
+  await expect(page.getByText('可直接查看全部功能介绍，实际使用时再登录或注册')).toBeVisible()
   await expect.poll(() => apiRequests).toEqual([])
 
-  await page.getByRole('link', { name: '创建我的工作台' }).click()
-  await expect(page).toHaveURL('/register')
-  await expect(page.getByRole('heading', { name: '创建 OwlMock 账户' })).toBeVisible()
+  await page.locator('section').first().getByRole('link', { name: '开始使用' }).click()
+  await expect(page).toHaveURL('/#features')
+  await expect(page.getByRole('heading', { name: '三个维度，全面准备' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'GitHub 源码分析' }).click()
+  await expect(page).toHaveURL('/login?redirect=/analysis/github')
+  await expect(page.getByRole('heading', { name: '登录 OwlMock' })).toBeVisible()
 })
 
 test('signs in, opens protected projects, and signs out', async ({ page }) => {

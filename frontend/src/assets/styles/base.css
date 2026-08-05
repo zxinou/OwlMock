@@ -3,10 +3,11 @@
 @tailwind utilities;
 
 /* ============================================
-   Design Tokens — exact match with original
+   OwlMock product tokens
    ============================================ */
 
-:root {
+:root,
+.landing-page {
   /* Color Palette */
   --color-base:       #F7FAF7;
   --color-surface:    #EEF4F1;
@@ -20,10 +21,17 @@
   --color-accent-light: #F0A08C;
   --color-ink:        #17312F;
   --color-ink-light:  #49615E;
-  --color-ink-muted:  #7B8D89;
+  --color-ink-muted:  #5F706C;
   --color-border:     #CDDCD6;
   --color-border-light:#E1EBE7;
   --color-white:      #FFFFFF;
+  --color-on-primary: #FFFFFF;
+  --color-on-secondary: #382B10;
+  --color-rail: #EEF4F1;
+  --color-rail-hover: #D9E8E2;
+  --color-rail-ink: #17312F;
+  --color-rail-muted: #526D68;
+  --color-rail-subtle: #718983;
 
   /* Typography */
   --font-heading: 'Plus Jakarta Sans', 'Noto Sans SC', sans-serif;
@@ -41,7 +49,7 @@
   --text-4xl:  2.25rem;
   --text-5xl:  3rem;
   --text-6xl:  3.75rem;
-  --text-hero: clamp(2.5rem, 5vw, 4.5rem);
+  --text-hero: 4rem;
 
   --leading-tight:  1.2;
   --leading-normal: 1.6;
@@ -115,6 +123,13 @@
   --color-border:     #2A4A45;
   --color-border-light:#203B37;
   --color-white:      #122321;
+  --color-on-primary: #102B28;
+  --color-on-secondary: #2F250E;
+  --color-rail: #102522;
+  --color-rail-hover: #1C3D38;
+  --color-rail-ink: #ECFDF5;
+  --color-rail-muted: #B8D0CA;
+  --color-rail-subtle: #86A39D;
 
   --shadow-sm:   0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow-md:   0 4px 16px rgba(0, 0, 0, 0.3);
@@ -208,7 +223,6 @@
 }
 
 /* ---- Global Component Overrides ---- */
-.dark .nav-glass,
 .dark .topbar-glass {
   background: rgba(18, 35, 33, 0.92) !important;
 }
@@ -264,19 +278,19 @@ body.app-navigation-open {
   gap: 0.45rem;
   margin-top: 1.4rem;
   padding: 0 0.9rem;
-  color: #fff;
-  background: #173f3b;
+  color: var(--color-on-primary);
+  background: var(--color-primary);
   border-radius: 6px;
   font-size: 0.76rem;
   font-weight: 700;
 }
 
 .workspace-empty__action:hover {
-  background: #2d6b65;
+  background: var(--color-primary-dark);
 }
 
 .dark .workspace-empty__action {
-  color: #17312f;
+  color: var(--color-on-secondary);
   background: var(--color-secondary);
 }
 
@@ -367,7 +381,7 @@ body.app-navigation-open {
   .reveal {
     opacity: 0;
     transform: translateY(24px);
-    transition: all 0.8s var(--ease-out);
+    transition: opacity var(--duration-slow) var(--ease-out), transform var(--duration-slow) var(--ease-out);
   }
 
   .reveal.visible {
@@ -405,5 +419,19 @@ body.app-navigation-open {
   .reveal {
     opacity: 1;
     transform: none;
+  }
+}
+
+@media (max-width: 768px) {
+  :root,
+  .landing-page {
+    --text-hero: 3rem;
+  }
+}
+
+@media (max-width: 480px) {
+  :root,
+  .landing-page {
+    --text-hero: 2.5rem;
   }
 }

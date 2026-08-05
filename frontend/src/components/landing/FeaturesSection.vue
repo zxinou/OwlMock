@@ -1,32 +1,28 @@
 <script setup>
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
-
 const features = [
   {
     title: 'GitHub 源码分析',
     desc: '粘贴你的 GitHub 仓库链接，猫头鹰助手会深入分析代码结构、技术栈和项目亮点，自动生成针对性的面试问题和回答话术。',
     tag: '支持主流语言和框架',
     route: '/analysis/github',
-    iconWrapBg: 'linear-gradient(135deg, #dcece8, #c9dfd9)',
-    iconStroke: '#2D6B65',
+    iconWrapBg: 'color-mix(in srgb, var(--color-primary) 15%, var(--color-white))',
+    iconStroke: 'var(--color-primary)',
   },
   {
     title: 'JD 智能分析',
     desc: '粘贴职位描述，猫头鹰助手会拆解岗位核心要求、隐含期望和匹配度评估，帮你判断是否值得投递，以及如何针对性准备。',
     tag: '关键词匹配 + 评估报告',
     route: '/analysis/jd',
-    iconWrapBg: 'linear-gradient(135deg, #f7edcb, #eedb9a)',
-    iconStroke: '#B7831D',
+    iconWrapBg: 'color-mix(in srgb, var(--color-secondary) 24%, var(--color-white))',
+    iconStroke: 'var(--color-on-secondary)',
   },
   {
     title: '简历匹配分析',
     desc: '上传简历并指定目标岗位，猫头鹰助手会评估你的经历与岗位的相关性，指出亮点和不足，并给出具体的修改建议。',
     tag: 'PDF / Word 格式支持',
     route: '/analysis/resume',
-    iconWrapBg: 'linear-gradient(135deg, #f7ddd6, #efc7bb)',
-    iconStroke: '#D86C57',
+    iconWrapBg: 'color-mix(in srgb, var(--color-accent) 16%, var(--color-white))',
+    iconStroke: 'var(--color-accent)',
   },
 ]
 </script>
@@ -37,8 +33,8 @@ const features = [
       <!-- Section header -->
       <div class="text-center mb-16 reveal">
         <div
-          class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-4"
-          style="color: var(--color-primary); letter-spacing: 0.1em"
+          class="inline-flex items-center gap-2 text-xs font-semibold uppercase mb-4"
+          style="color: var(--color-primary)"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.2"/><path d="M5 8h6M8 5v6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
           智能分析
@@ -51,9 +47,10 @@ const features = [
 
       <!-- Cards grid -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div
+        <router-link
           v-for="(f, i) in features"
           :key="i"
+          :to="f.route"
           class="reveal relative cursor-pointer overflow-hidden transition-all border border-border-light hover:-translate-y-1.5 hover:shadow-lg hover:border-primary-light"
           :style="{
             transitionDelay: `${i * 0.1}s`,
@@ -63,7 +60,6 @@ const features = [
             transitionDuration: 'var(--duration-slow)',
             transitionTimingFunction: 'var(--ease-out)',
           }"
-          @click="router.push(f.route)"
         >
           <!-- Icon -->
           <div
@@ -106,7 +102,7 @@ const features = [
             <circle cx="111" cy="67" r="3" fill="var(--color-primary)"/>
             <path d="m92 74-7 8 7 5 7-5-7-8Z" stroke="var(--color-primary)" stroke-width="2"/>
           </svg>
-        </div>
+        </router-link>
       </div>
     </div>
   </section>
