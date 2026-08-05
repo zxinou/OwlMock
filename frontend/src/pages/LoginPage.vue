@@ -1,7 +1,14 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Eye, EyeOff, LoaderCircle, LockKeyhole, LogIn } from 'lucide-vue-next'
+import {
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  LockKeyhole,
+  LogIn,
+  UserPlus,
+} from 'lucide-vue-next'
 
 import OwlLogo from '@/components/common/OwlLogo.vue'
 import { normalizeAuthRedirect } from '@/router/authGuard.js'
@@ -9,19 +16,34 @@ import { authStore } from '@/stores/auth.js'
 
 const route = useRoute()
 const router = useRouter()
+const email = ref('')
+const displayName = ref('')
 const password = ref('')
 const passwordVisible = ref(false)
 const error = ref('')
 
+const isRegister = computed(() => route.name === 'register')
+const heading = computed(() => (isRegister.value ? '创建 OwlMock 账户' : '登录 OwlMock'))
+const submitLabel = computed(() => (isRegister.value ? '创建账户' : '进入工作台'))
+const alternateRoute = computed(() => (isRegister.value ? 'login' : 'register'))
+const alternateLabel = computed(() => (isRegister.value ? '已有账户？登录' : '还没有账户？创建账户'))
+const submitDisabled = computed(() => !email.value || !password.value || authStore.loading)
+
 async function submit() {
-  if (!password.value || authStore.loading) return
+  if (submitDisabled.value) return
 
   error.value = ''
   try {
-    await authStore.login(password.value)
+    const input = {
+      email: email.value.trim(),
+      password: password.value,
+    }
+    if (isRegister.value) input.displayName = displayName.value.trim()
+    if (isRegister.value) await authStore.register(input)
+    else await authStore.login(input)
     await router.replace(normalizeAuthRedirect(route.query.redirect))
   } catch (cause) {
-    error.value = cause?.message || '登录未完成，请稍后重试。'
+    error.value = cause?.message || '账户操作未完成，请稍后重试。'
   }
 }
 </script>
@@ -38,11 +60,11 @@ async function submit() {
         <div class="login-page__owl" aria-hidden="true">
           <OwlLogo :size="136" style="filter: none; opacity: 1" />
         </div>
-        <p>个人求职工作台</p>
-        <h1 id="login-brand-title">把准备留在一个安静的空间里</h1>
+        <p>求职准备工作台</p>
+        <h1 id="login-brand-title">把每一次准备，留在属于你的安全空间里</h1>
       </div>
 
-      <p class="login-page__instance">个人自部署实例</p>
+      <p class="login-page__instance">OwlMock 账户服务</p>
     </section>
 
     <section class="login-page__form-panel" aria-labelledby="login-heading">
@@ -54,21 +76,54 @@ async function submit() {
       <form class="login-form" :aria-busy="authStore.loading" @submit.prevent="submit">
         <div class="login-form__heading">
           <span class="login-form__heading-icon" aria-hidden="true"><LockKeyhole :size="19" /></span>
-          <p>安全会话</p>
-          <h2 id="login-heading">登录 OwlMock</h2>
+          <p>{{ isRegister ? '创建账户' : '安全登录' }}</p>
+          <h2 id="login-heading">{{ heading }}</h2>
         </div>
 
         <div class="login-form__field">
-          <label for="admin-password">管理员密码</label>
+          <label for="email">邮箱</label>
+          <div class="login-form__input-wrap login-form__input-wrap--plain" :class="{ 'login-form__input-wrap--error': error }">
+            <input
+              id="email"
+              v-model="email"
+              type="email"
+              name="email"
+              autocomplete="email"
+              required
+              autofocus
+              :disabled="authStore.loading"
+              :aria-invalid="Boolean(error)"
+              :aria-describedby="error ? 'login-error' : undefined"
+            >
+          </div>
+        </div>
+
+        <div v-if="isRegister" class="login-form__field">
+          <label for="display-name">昵称（可选）</label>
+          <div class="login-form__input-wrap login-form__input-wrap--plain">
+            <input
+              id="display-name"
+              v-model="displayName"
+              type="text"
+              name="display-name"
+              autocomplete="name"
+              maxlength="80"
+              :disabled="authStore.loading"
+            >
+          </div>
+        </div>
+
+        <div class="login-form__field">
+          <label for="password">密码</label>
           <div class="login-form__input-wrap" :class="{ 'login-form__input-wrap--error': error }">
             <input
-              id="admin-password"
+              id="password"
               v-model="password"
               :type="passwordVisible ? 'text' : 'password'"
               name="password"
-              autocomplete="current-password"
+              :autocomplete="isRegister ? 'new-password' : 'current-password'"
+              minlength="10"
               required
-              autofocus
               :disabled="authStore.loading"
               :aria-invalid="Boolean(error)"
               :aria-describedby="error ? 'login-error' : undefined"
@@ -84,15 +139,23 @@ async function submit() {
               <Eye v-else :size="18" />
             </button>
           </div>
+          <p v-if="isRegister" class="login-form__hint">至少 10 个字符</p>
         </div>
 
         <p v-if="error" id="login-error" class="login-form__error" role="alert">{{ error }}</p>
 
-        <button class="login-form__submit" type="submit" :disabled="!password || authStore.loading">
+        <button class="login-form__submit" type="submit" :disabled="submitDisabled">
           <LoaderCircle v-if="authStore.loading" class="login-form__spinner" :size="18" />
+          <UserPlus v-else-if="isRegister" :size="18" />
           <LogIn v-else :size="18" />
-          <span>{{ authStore.loading ? '正在登录' : '进入工作台' }}</span>
+          <span>{{ authStore.loading ? '正在提交' : submitLabel }}</span>
         </button>
+
+        <p class="login-form__alternate">
+          <router-link :to="{ name: alternateRoute, query: { redirect: route.query.redirect } }">
+            {{ alternateLabel }}
+          </router-link>
+        </p>
       </form>
     </section>
   </main>
@@ -216,6 +279,10 @@ async function submit() {
   font-size: 1.8rem;
 }
 
+.login-form__field + .login-form__field {
+  margin-top: 1rem;
+}
+
 .login-form__field label {
   display: inline-block;
   margin-bottom: 0.5rem;
@@ -233,6 +300,10 @@ async function submit() {
   border: 1px solid var(--color-border);
   border-radius: 7px;
   transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+
+.login-form__input-wrap--plain {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .login-form__input-wrap:focus-within {
@@ -269,6 +340,12 @@ async function submit() {
   background: var(--color-surface);
 }
 
+.login-form__hint {
+  margin-top: 0.4rem;
+  color: var(--color-ink-muted);
+  font-size: 0.72rem;
+}
+
 .login-form__error {
   margin-top: 0.75rem;
   padding-left: 0.7rem;
@@ -302,6 +379,21 @@ async function submit() {
 .login-form__submit:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.login-form__alternate {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.78rem;
+}
+
+.login-form__alternate a {
+  color: var(--color-primary);
+  font-weight: 650;
+}
+
+.login-form__alternate a:hover {
+  text-decoration: underline;
 }
 
 .login-form__spinner {

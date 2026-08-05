@@ -7,7 +7,8 @@ from alembic import command
 from alembic.config import Config
 
 BASELINE_REVISION = "0001_legacy_baseline"
-HEAD_REVISION = "0002_add_job_projects"
+PROJECT_REVISION = "0002_add_job_projects"
+HEAD_REVISION = "0003_add_public_users"
 LEGACY_TABLES = {
     "sessions",
     "repo_analyses",

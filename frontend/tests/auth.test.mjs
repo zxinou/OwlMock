@@ -16,9 +16,9 @@ test('auth store bootstraps, signs in, and signs out', async (t) => {
       error.status = 401
       throw error
     },
-    async login(password) {
-      calls.push(['login', password])
-      return { authenticated: true, owner_id: 'default' }
+    async login(input) {
+      calls.push(['login', input])
+      return { authenticated: true, user: { id: 'user-1', email: 'person@example.com' } }
     },
     async logout() {
       calls.push('logout')
@@ -31,13 +31,44 @@ test('auth store bootstraps, signs in, and signs out', async (t) => {
   assert.equal(auth.ready, true)
   assert.equal(auth.authenticated, false)
 
-  await auth.login('correct-password')
+  await auth.login({ email: 'person@example.com', password: 'correct-password' })
   assert.equal(auth.authenticated, true)
-  assert.equal(auth.ownerId, 'default')
+  assert.equal(auth.userId, 'user-1')
 
   await auth.logout()
   assert.equal(auth.authenticated, false)
-  assert.deepEqual(calls, ['session', ['login', 'correct-password'], 'logout'])
+  assert.deepEqual(calls, ['session', ['login', { email: 'person@example.com', password: 'correct-password' }], 'logout'])
+})
+
+test('auth store registers a public account and keeps the returned user profile', async (t) => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  t.after(() => vite.close())
+  const { createAuthStore } = await vite.ssrLoadModule('/src/stores/auth.js')
+
+  const client = {
+    async register(input) {
+      assert.deepEqual(input, {
+        email: 'person@example.com',
+        password: 'a-public-password-123',
+        displayName: 'Person',
+      })
+      return {
+        authenticated: true,
+        user: { id: 'user-1', email: 'person@example.com', display_name: 'Person' },
+      }
+    },
+  }
+  const auth = createAuthStore(client)
+
+  await auth.register({
+    email: 'person@example.com',
+    password: 'a-public-password-123',
+    displayName: 'Person',
+  })
+
+  assert.equal(auth.authenticated, true)
+  assert.equal(auth.userId, 'user-1')
+  assert.equal(auth.user.display_name, 'Person')
 })
 
 test('route guard redirects anonymous users and keeps signed-in users out of login', async (t) => {
@@ -64,7 +95,7 @@ test('route guard redirects anonymous users and keeps signed-in users out of log
 
   assert.deepEqual(
     await resolveAuthNavigation({ name: 'root', fullPath: '/', meta: {} }, anonymous),
-    { name: 'login' },
+    true,
   )
   assert.deepEqual(
     await resolveAuthNavigation({ name: 'root', fullPath: '/', meta: {} }, owner),
@@ -129,6 +160,21 @@ test('app router protects projects and sends authenticated root visits to projec
   })
   await ownerRouter.push('/')
   assert.equal(ownerRouter.currentRoute.value.name, 'projects')
+})
+
+test('anonymous visitors can browse the public product preview before signing in', async (t) => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  t.after(() => vite.close())
+  const { createAppRouter } = await vite.ssrLoadModule('/src/router/index.js')
+
+  const router = createAppRouter({
+    history: createMemoryHistory(),
+    auth: { ready: true, authenticated: false },
+    handleUnauthorized: false,
+  })
+  await router.push('/')
+
+  assert.equal(router.currentRoute.value.name, 'root')
 })
 
 test('API sends same-origin credentials and reports structured 401 errors', async (t) => {

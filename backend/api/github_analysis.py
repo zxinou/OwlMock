@@ -11,11 +11,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.deps import require_owner
 from api.schemas import EventType
 from service.task_service import task_service
 from storage.db.engine import async_session_factory
@@ -39,7 +40,7 @@ class AnalysisResponse(BaseModel):
     stage: str | None = None
     progress: float | None = None
     cached: bool = False
-    reusedTask: bool = False
+    reusedTask: bool = False  # noqa: N815 - frontend API uses camelCase.
 
 
 @dataclass(frozen=True)
@@ -164,10 +165,18 @@ def normalize_github_repo_url(raw_url: str) -> NormalizedGithubRepo:
 # --- Database helpers ---
 
 
-async def check_analysis_cache(db: AsyncSession, url: str) -> dict | None:
+async def check_analysis_cache(
+    db: AsyncSession,
+    url: str,
+    user_id: str = "default",
+) -> dict | None:
     """Check if a completed analysis exists for this URL. Returns result_json or None."""
     result = await db.execute(
-        select(RepoAnalysis).where(RepoAnalysis.url == url, RepoAnalysis.status == "done")
+        select(RepoAnalysis).where(
+            RepoAnalysis.url == url,
+            RepoAnalysis.user_id == user_id,
+            RepoAnalysis.status == "done",
+        )
     )
     analysis = result.scalar_one_or_none()
     if analysis and analysis.result_json:
@@ -182,14 +191,21 @@ async def check_analysis_cache(db: AsyncSession, url: str) -> dict | None:
 
 
 async def create_analysis_record(
-    db: AsyncSession, url: str, owner: str, repo: str
+    db: AsyncSession,
+    url: str,
+    owner: str,
+    repo: str,
+    user_id: str = "default",
 ) -> str:
     """Create a pending analysis record. Returns the analysis ID.
 
     If a record with the same URL already exists, return its ID.
     """
     result = await db.execute(
-        select(RepoAnalysis).where(RepoAnalysis.url == url)
+        select(RepoAnalysis).where(
+            RepoAnalysis.url == url,
+            RepoAnalysis.user_id == user_id,
+        )
     )
     existing = result.scalar_one_or_none()
     if existing:
@@ -207,6 +223,7 @@ async def create_analysis_record(
     analysis_id = str(uuid.uuid4())
     analysis = RepoAnalysis(
         id=analysis_id,
+        user_id=user_id,
         url=url,
         owner=owner,
         repo=repo,
@@ -222,9 +239,10 @@ async def create_analysis_record(
 async def prepare_analysis_submission(
     db: AsyncSession,
     repo: NormalizedGithubRepo,
+    user_id: str = "default",
 ) -> AnalysisSubmissionDecision:
     """Reuse live work, reclaim stale work, or create a new analysis task."""
-    analysis = await get_analysis_by_url(db, repo.url)
+    analysis = await get_analysis_by_url(db, repo.url, user_id)
 
     if analysis is not None:
         parsed = parse_analysis_json(analysis.result_json) if analysis.result_json else None
@@ -274,7 +292,13 @@ async def prepare_analysis_submission(
             should_start_task=True,
         )
 
-    analysis_id = await create_analysis_record(db, repo.url, repo.owner, repo.repo)
+    analysis_id = await create_analysis_record(
+        db,
+        repo.url,
+        repo.owner,
+        repo.repo,
+        user_id,
+    )
     task_service.create_task(task_id=analysis_id)
     return AnalysisSubmissionDecision(
         analysis_id=analysis_id,
@@ -358,19 +382,26 @@ async def get_analysis_result(db: AsyncSession, analysis_id: str) -> dict | None
     return None
 
 
-async def get_analysis_record(db: AsyncSession, analysis_id: str) -> RepoAnalysis | None:
+async def get_analysis_record(
+    db: AsyncSession,
+    analysis_id: str,
+    user_id: str | None = None,
+) -> RepoAnalysis | None:
     """Get full analysis record by ID."""
-    result = await db.execute(
-        select(RepoAnalysis).where(RepoAnalysis.id == analysis_id)
-    )
+    query = select(RepoAnalysis).where(RepoAnalysis.id == analysis_id)
+    if user_id is not None:
+        query = query.where(RepoAnalysis.user_id == user_id)
+    result = await db.execute(query)
     return result.scalar_one_or_none()
 
 
 async def get_saved_analysis_result(
-    db: AsyncSession, analysis_id: str
+    db: AsyncSession,
+    analysis_id: str,
+    user_id: str | None = None,
 ) -> dict | None:
     """Return parsed result if save_repo_analysis already persisted it."""
-    analysis = await get_analysis_record(db, analysis_id)
+    analysis = await get_analysis_record(db, analysis_id, user_id)
     if analysis and analysis.status == "done" and analysis.result_json:
         data = parse_analysis_json(analysis.result_json)
         if get_analysis_payload_error(data):
@@ -463,19 +494,31 @@ def analysis_status_payload(analysis: RepoAnalysis) -> dict:
     }
 
 
-async def get_analysis_by_url(db: AsyncSession, url: str) -> RepoAnalysis | None:
+async def get_analysis_by_url(
+    db: AsyncSession,
+    url: str,
+    user_id: str = "default",
+) -> RepoAnalysis | None:
     """Get analysis record by URL."""
     result = await db.execute(
-        select(RepoAnalysis).where(RepoAnalysis.url == url)
+        select(RepoAnalysis).where(
+            RepoAnalysis.url == url,
+            RepoAnalysis.user_id == user_id,
+        )
     )
     return result.scalar_one_or_none()
 
 
-async def delete_analysis_record(db: AsyncSession, analysis_id: str) -> bool:
+async def delete_analysis_record(
+    db: AsyncSession,
+    analysis_id: str,
+    user_id: str | None = None,
+) -> bool:
     """Delete one stored GitHub analysis record."""
-    result = await db.execute(
-        select(RepoAnalysis).where(RepoAnalysis.id == analysis_id)
-    )
+    query = select(RepoAnalysis).where(RepoAnalysis.id == analysis_id)
+    if user_id is not None:
+        query = query.where(RepoAnalysis.user_id == user_id)
+    result = await db.execute(query)
     analysis = result.scalar_one_or_none()
     if analysis is None:
         return False
@@ -489,16 +532,19 @@ async def delete_analysis_record(db: AsyncSession, analysis_id: str) -> bool:
 
 
 @router.post("/analysis", response_model=AnalysisResponse)
-async def submit_analysis(request: AnalysisRequest):
+async def submit_analysis(
+    request: AnalysisRequest,
+    user_id: str = Depends(require_owner),
+):
     """Submit a GitHub repository analysis task."""
     try:
         normalized = normalize_github_repo_url(request.repo_url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    async with _submission_lock(normalized.url):
+    async with _submission_lock(f"{user_id}:{normalized.url}"):
         async with async_session_factory() as db:
-            decision = await prepare_analysis_submission(db, normalized)
+            decision = await prepare_analysis_submission(db, normalized, user_id)
 
         if decision.should_start_task:
             asyncio.create_task(
@@ -516,12 +562,15 @@ async def submit_analysis(request: AnalysisRequest):
 
 
 @router.get("/analysis")
-async def list_analyses():
+async def list_analyses(user_id: str = Depends(require_owner)):
     """List all completed and failed analyses."""
     async with async_session_factory() as db:
         result = await db.execute(
             select(RepoAnalysis)
-            .where(RepoAnalysis.status.in_(["done", "failed"]))
+            .where(
+                RepoAnalysis.user_id == user_id,
+                RepoAnalysis.status.in_(["done", "failed"]),
+            )
             .order_by(RepoAnalysis.analyzed_at.desc())
         )
         analyses = result.scalars().all()
@@ -541,10 +590,13 @@ async def list_analyses():
 
 
 @router.get("/analysis/{analysis_id}")
-async def read_analysis(analysis_id: str):
+async def read_analysis(
+    analysis_id: str,
+    user_id: str = Depends(require_owner),
+):
     """Read analysis result by ID (supports both done and failed)."""
     async with async_session_factory() as db:
-        analysis = await get_analysis_record(db, analysis_id)
+        analysis = await get_analysis_record(db, analysis_id, user_id)
     if analysis is None:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
@@ -566,10 +618,13 @@ async def read_analysis(analysis_id: str):
 
 
 @router.delete("/analysis/{analysis_id}", status_code=204)
-async def delete_analysis(analysis_id: str):
+async def delete_analysis(
+    analysis_id: str,
+    user_id: str = Depends(require_owner),
+):
     """Delete a GitHub analysis history item."""
     async with async_session_factory() as db:
-        deleted = await delete_analysis_record(db, analysis_id)
+        deleted = await delete_analysis_record(db, analysis_id, user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
@@ -586,8 +641,6 @@ async def _run_analysis(task_id: str, repo_url: str):
     # Create a synthetic session for the agent
     # Clear existing history to avoid stale context from previous runs
     session_id = f"analysis-{task_id}"
-    session_store.create("system", session_id, "repo-analyzer", clear_existing=True)
-
     # Create cancel token and bridge to TaskService
     cancel_token = CancelToken()
     asyncio.create_task(_bridge_cancel(task_id, cancel_token))
@@ -597,12 +650,17 @@ async def _run_analysis(task_id: str, repo_url: str):
 
     async with async_session_factory() as db:
         try:
+            analysis = await get_analysis_record(db, task_id)
+            if analysis is None:
+                raise LookupError("Repository analysis not found")
+            user_id = analysis.user_id
+            session_store.create(user_id, session_id, "repo-analyzer", clear_existing=True)
             await update_analysis_progress(db, task_id, "cloning", 0.10)
             agent = agent_factory.create(
                 profile_id="repo-analyzer",
                 session_id=session_id,
                 mode="text",
-                user_id="system",
+                user_id=user_id,
                 db_session=db,
             )
             agent.cancel_token = cancel_token

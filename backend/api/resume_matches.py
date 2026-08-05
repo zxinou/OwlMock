@@ -9,14 +9,14 @@ import os
 import uuid
 from trace import trace_analysis_request
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from agent.llm.providers.openai_compatible import build_multimodal_message
 from agent.llm.router import chat_structured_with_fallback
 from agent.profile_loader import ProfileLoader
-from security.session import OWNER_ID
+from api.deps import require_owner
 from service.resume_match_report import ResumeMatchReport
 from service.resume_media import prepare_resume_images
 from service.task_service import task_service
@@ -307,12 +307,15 @@ async def create_pending_resume_match(
 
 
 @router.post("/resume-matches/batch", status_code=202)
-async def submit_resume_match_batch(body: ResumeMatchBatchRequest):
+async def submit_resume_match_batch(
+    body: ResumeMatchBatchRequest,
+    user_id: str = Depends(require_owner),
+):
     """Create one independent persisted match for every selected JD analysis."""
     jd_ids = list(dict.fromkeys(body.jd_analysis_ids))
     async with async_session_factory() as db:
         resume = await db.get(Resume, body.resume_id)
-        if resume is None or resume.user_id != OWNER_ID:
+        if resume is None or resume.user_id != user_id:
             raise HTTPException(status_code=404, detail="Resume not found")
         if not resume.file_path or not os.path.isfile(resume.file_path):
             raise HTTPException(status_code=400, detail="Resume file is unavailable")
@@ -325,7 +328,7 @@ async def submit_resume_match_batch(body: ResumeMatchBatchRequest):
             jd_id
             for jd_id in jd_ids
             if jd_id not in jd_by_id
-            or jd_by_id[jd_id].user_id != OWNER_ID
+            or jd_by_id[jd_id].user_id != user_id
             or jd_by_id[jd_id].status != "completed"
             or not jd_by_id[jd_id].result_json
             or jd_by_id[jd_id].result_json == "{}"
@@ -346,7 +349,7 @@ async def submit_resume_match_batch(body: ResumeMatchBatchRequest):
             record = ResumeMatchRecord(
                 id=str(uuid.uuid4()),
                 batch_id=batch_id,
-                user_id=OWNER_ID,
+                user_id=user_id,
                 resume_id=body.resume_id,
                 jd_analysis_id=jd.id,
                 job_description=jd.text,
@@ -379,14 +382,17 @@ async def submit_resume_match_batch(body: ResumeMatchBatchRequest):
 
 
 @router.delete("/resume-matches/batch")
-async def batch_delete_resume_matches(body: BatchDeleteRequest):
+async def batch_delete_resume_matches(
+    body: BatchDeleteRequest,
+    user_id: str = Depends(require_owner),
+):
     """Cancel and delete selected match records without deleting resumes."""
     ids = list(dict.fromkeys(body.ids))
     async with async_session_factory() as db:
         records = (await db.execute(
             select(ResumeMatchRecord).where(
                 ResumeMatchRecord.id.in_(ids),
-                ResumeMatchRecord.user_id == OWNER_ID,
+                ResumeMatchRecord.user_id == user_id,
             )
         )).scalars().all()
         for record in records:
@@ -397,15 +403,18 @@ async def batch_delete_resume_matches(body: BatchDeleteRequest):
 
 
 @router.post("/resume-matches", status_code=202)
-async def submit_resume_match(body: ResumeMatchRequest):
+async def submit_resume_match(
+    body: ResumeMatchRequest,
+    user_id: str = Depends(require_owner),
+):
     async with async_session_factory() as db:
         resume = await db.get(Resume, body.resume_id)
-        if resume is None or resume.user_id != OWNER_ID:
+        if resume is None or resume.user_id != user_id:
             raise HTTPException(status_code=404, detail="Resume not found")
         if not resume.file_path or not os.path.isfile(resume.file_path):
             raise HTTPException(status_code=400, detail="Resume file is unavailable")
     record = await create_pending_resume_match(
-        user_id=OWNER_ID,
+        user_id=user_id,
         resume_id=body.resume_id,
         job_description=body.job_description,
     )
@@ -413,11 +422,11 @@ async def submit_resume_match(body: ResumeMatchRequest):
 
 
 @router.get("/resume-matches")
-async def list_resume_matches(user_id: str = "default"):
+async def list_resume_matches(user_id: str = Depends(require_owner)):
     async with async_session_factory() as db:
         rows = (await db.execute(
             select(ResumeMatchRecord)
-            .where(ResumeMatchRecord.user_id == OWNER_ID)
+            .where(ResumeMatchRecord.user_id == user_id)
             .order_by(ResumeMatchRecord.created_at.desc())
         )).scalars().all()
         values = []
@@ -443,12 +452,15 @@ def _match_score(record: ResumeMatchRecord) -> float:
 
 
 @router.get("/resume-match-batches/{batch_id}")
-async def get_resume_match_batch(batch_id: str, user_id: str = "default"):
+async def get_resume_match_batch(
+    batch_id: str,
+    user_id: str = Depends(require_owner),
+):
     async with async_session_factory() as db:
         rows = (await db.execute(
             select(ResumeMatchRecord).where(
                 ResumeMatchRecord.batch_id == batch_id,
-                ResumeMatchRecord.user_id == OWNER_ID,
+                ResumeMatchRecord.user_id == user_id,
             )
         )).scalars().all()
         if not rows:
@@ -488,13 +500,16 @@ async def get_resume_match_batch(batch_id: str, user_id: str = "default"):
 
 
 @router.get("/resume-matches/{match_id}")
-async def get_resume_match(match_id: str):
+async def get_resume_match(
+    match_id: str,
+    user_id: str = Depends(require_owner),
+):
     async with async_session_factory() as db:
         record = (
             await db.execute(
                 select(ResumeMatchRecord).where(
                     ResumeMatchRecord.id == match_id,
-                    ResumeMatchRecord.user_id == OWNER_ID,
+                    ResumeMatchRecord.user_id == user_id,
                 )
             )
         ).scalar_one_or_none()
@@ -510,13 +525,16 @@ async def get_resume_match(match_id: str):
 
 
 @router.post("/resume-matches/{match_id}/resume")
-async def resume_resume_match(match_id: str):
+async def resume_resume_match(
+    match_id: str,
+    user_id: str = Depends(require_owner),
+):
     async with async_session_factory() as db:
         record = (
             await db.execute(
                 select(ResumeMatchRecord).where(
                     ResumeMatchRecord.id == match_id,
-                    ResumeMatchRecord.user_id == OWNER_ID,
+                    ResumeMatchRecord.user_id == user_id,
                 )
             )
         ).scalar_one_or_none()
@@ -549,13 +567,16 @@ async def resume_resume_match(match_id: str):
 
 
 @router.delete("/resume-matches/{match_id}", status_code=204)
-async def delete_resume_match(match_id: str):
+async def delete_resume_match(
+    match_id: str,
+    user_id: str = Depends(require_owner),
+):
     async with async_session_factory() as db:
         record = (
             await db.execute(
                 select(ResumeMatchRecord).where(
                     ResumeMatchRecord.id == match_id,
-                    ResumeMatchRecord.user_id == OWNER_ID,
+                    ResumeMatchRecord.user_id == user_id,
                 )
             )
         ).scalar_one_or_none()

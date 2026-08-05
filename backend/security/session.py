@@ -15,12 +15,12 @@ _SESSION_SECRET_FILE = ".session-secret"
 
 
 class SessionSigner:
-    """Issue and verify signed, expiring owner-session tokens."""
+    """Issue and verify signed, expiring user-session tokens."""
 
     def __init__(self, secret: str, max_age_seconds: int) -> None:
         self._serializer = URLSafeTimedSerializer(
             secret_key=secret,
-            salt="owlmock.owner-session.v1",
+            salt="owlmock.user-session.v2",
         )
         self.max_age_seconds = max_age_seconds
 
@@ -31,15 +31,21 @@ class SessionSigner:
         )
         return cls(secret, settings.OWLMOCK_SESSION_DAYS * 24 * 60 * 60)
 
-    def issue(self) -> str:
-        return self._serializer.dumps({"sub": OWNER_ID, "iat": int(time.time())})
+    def issue(self, user_id: str = OWNER_ID) -> str:
+        if not user_id:
+            raise ValueError("A user id is required to issue a session")
+        return self._serializer.dumps({"sub": user_id, "iat": int(time.time())})
 
     def verify(self, token: str) -> dict[str, Any] | None:
         try:
             payload = self._serializer.loads(token, max_age=self.max_age_seconds)
         except (BadSignature, SignatureExpired):
             return None
-        if not isinstance(payload, dict) or payload.get("sub") != OWNER_ID:
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(payload.get("sub"), str)
+            or not payload["sub"]
+        ):
             return None
         return payload
 

@@ -12,14 +12,20 @@ export const routes = [
   {
     path: '/',
     name: 'root',
-    component: () => import('@/pages/projects/ProjectListPage.vue'),
-    meta: { title: 'OwlMock', appShell: true, section: '岗位项目' },
+    component: () => import('@/pages/PublicPreviewPage.vue'),
+    meta: { title: 'OwlMock - 求职准备工作台', public: true },
   },
   {
     path: '/login',
     name: 'login',
     component: () => import('@/pages/LoginPage.vue'),
     meta: { title: '登录 - OwlMock', public: true },
+  },
+  {
+    path: '/register',
+    name: 'register',
+    component: () => import('@/pages/LoginPage.vue'),
+    meta: { title: '创建账户 - OwlMock', public: true },
   },
   {
     path: '/projects',
@@ -37,13 +43,13 @@ export const routes = [
     path: '/projects/:projectId/jd/tasks/:taskId',
     name: 'project-jd-task',
     component: () => import('@/pages/jd/JdTaskPage.vue'),
-    meta: { title: 'JD 分析进度 - OwlMock', section: '岗位项目' },
+    meta: { title: 'JD 分析进度 - OwlMock', appShell: true, section: '岗位项目' },
   },
   {
     path: '/projects/:projectId/resume/tasks/:taskId',
     name: 'project-resume-task',
     component: () => import('@/pages/resume/ResumeMatchTaskPage.vue'),
-    meta: { title: '简历匹配进度 - OwlMock', section: '岗位项目' },
+    meta: { title: '简历匹配进度 - OwlMock', appShell: true, section: '岗位项目' },
   },
   {
     path: '/projects/:projectId',

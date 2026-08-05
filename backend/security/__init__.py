@@ -1,1 +1,1 @@
-"""Security primitives for the single-owner OwlMock deployment."""
+"""Security primitives for OwlMock user accounts and sessions."""

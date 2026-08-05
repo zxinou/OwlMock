@@ -127,7 +127,7 @@ Voice: interviewer question -> start answer -> audio chunks
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/)
 - Node.js 18+
-- DashScope API Key
+- DashScope API Key（仅在启用 AI 分析时需要）
 - Zhipu API Key（可选 fallback）
 
 ### 启动后端
@@ -139,7 +139,7 @@ cp .env.example .env
 uv run uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Windows PowerShell 可使用 `Copy-Item .env.example .env`。在 `backend/.env` 中至少配置：
+Windows PowerShell 可使用 `Copy-Item .env.example .env`。在 `backend/.env` 中配置 AI provider（登录和浏览产品不依赖 provider）：
 
 ```dotenv
 DASHSCOPE_API_KEY=your-dashscope-key
@@ -207,9 +207,151 @@ OwlMock/
 
 - 不要提交 `backend/.env`，只提交无密钥的 `.env.example`。
 - 简历、JD 截图、仓库缓存、SQLite、会话日志和本地测试输出均已加入 `.gitignore`。
-- 当前默认用户为本地开发用的 `default`，项目尚未包含生产级登录、权限隔离或多租户鉴权。
-- 公开部署前应增加认证、上传限额、请求限流、CORS 白名单和持久化对象存储。
+- OwlMock 支持公开邮箱账户。密码使用标准库 `scrypt` 加盐哈希，登录状态使用签名 HttpOnly Cookie。
+- 访客可以直接浏览产品预览；创建项目、上传简历、分析和面试等实际数据操作需要注册或登录。
+- 所有项目、简历、分析、任务和面试会话按用户 ID 隔离。旧版单用户数据可通过同时设置 `OWLMOCK_BOOTSTRAP_EMAIL` 与 `OWLMOCK_ADMIN_PASSWORD` 迁移到 `default` 账户。
+- 当前 beta 不接入付费邮箱服务，因此暂不提供邮箱验证和密码找回；可通过 `OWLMOCK_ALLOW_REGISTRATION=false` 关闭新注册。
+- 公开服务启用了进程内登录/注册限流；SQLite 模式必须使用持久化卷和单副本。
 - 源码中的 `CAPYMOCK_` 环境变量前缀和 `capy_note` 字段是为旧数据保留的兼容标识，不是当前产品名称。
+
+## Deployment and operations
+
+### First setup with Docker Compose
+
+The production image serves the built Vue application and the FastAPI API from the
+same origin. Docker Compose is defined in `backend/docker-compose.yml` and builds
+the root `Dockerfile`.
+
+```bash
+cd backend
+cp .env.example .env
+# Set OWLMOCK_SESSION_SECRET in .env first.
+docker compose up --build -d
+docker compose logs -f app
+```
+
+Set these values before exposing the service:
+
+```dotenv
+# Required in production. Generate once, keep it stable, and do not share it.
+OWLMOCK_SESSION_SECRET=replace-with-a-random-32-byte-secret
+OWLMOCK_ALLOW_REGISTRATION=true
+OWLMOCK_COOKIE_SECURE=true
+TRACER=noop
+```
+
+Generate a session secret with `openssl rand -hex 32`.
+`OWLMOCK_SESSION_SECRET` signs the login cookie;
+changing it signs every active user out. The application can generate and persist a
+secret under the data directory when it is empty, but an explicitly managed secret
+is recommended for production and disaster recovery. Use
+`OWLMOCK_COOKIE_SECURE=false` only for plain HTTP local development.
+
+The Compose volume `owlmock-data` is the persistent `/data` directory. It contains
+the SQLite database, uploaded files, session data, and backups. Do not delete or
+replace that volume during an upgrade.
+
+### Railway
+
+Create a Railway service from this repository. Railway reads the root
+`railway.toml` and builds the root `Dockerfile`; no separate frontend service is
+required. Attach a persistent volume mounted at `/data`, keep the configured
+single replica, then configure these service variables in Railway:
+
+```dotenv
+OWLMOCK_DATA_DIR=/data
+OWLMOCK_SESSION_SECRET=replace-with-a-random-32-byte-secret
+OWLMOCK_ALLOW_REGISTRATION=true
+OWLMOCK_COOKIE_SECURE=true
+OWLMOCK_AUTH_RATE_LIMIT=8
+OWLMOCK_AUTH_RATE_WINDOW_SECONDS=300
+TRACER=noop
+# Set provider keys only for features you intend to use.
+DASHSCOPE_API_KEY=
+ZHIPU_API_KEY=
+```
+
+Railway provides `PORT`; leave it unset unless you are running outside Railway.
+After the first deploy, open `/api/health/live` to confirm the service is healthy,
+then open the Railway domain. Visitors can browse the public product preview;
+each person creates their own account before using private workflows.
+
+### Upgrades
+
+Back up first. For Compose deployments, update the checkout and rebuild the image:
+
+```bash
+cd backend
+docker compose exec app python -m management backup
+docker compose build --pull
+docker compose up -d
+docker compose logs -f app
+```
+
+For Railway, make a backup, deploy the updated commit, and keep the `/data` volume
+attached. The application runs its database initialization and supported migrations
+on startup. If a version documents an additional manual migration, run it before
+accepting production traffic.
+
+### Backup and restore
+
+The management command creates a consistent SQLite snapshot and packages managed
+data in a ZIP archive. Its successful output is JSON such as:
+
+```json
+{"status":"ok","archive":"/data/backups/owlmock-20260805T000000Z.zip"}
+```
+
+Create a backup in the running Compose service:
+
+```bash
+cd backend
+docker compose exec app python -m management backup
+```
+
+For a host-managed installation, provide the data directory and an output path:
+
+```bash
+cd backend
+uv run python -m management backup --data-dir /srv/owlmock/data --output /srv/owlmock/backups/owlmock.zip
+```
+
+Restore only while the application is stopped. The command validates the ZIP,
+checks checksums and the SQLite schema, and returns JSON with `restored_files` and
+`schema_revision` on success.
+
+```bash
+cd backend
+docker compose stop app
+docker compose run --rm app python -m management restore /data/backups/owlmock-20260805T000000Z.zip
+docker compose up -d app
+```
+
+For a host-managed installation, stop its service first and use:
+
+```bash
+uv run python -m management restore /srv/owlmock/backups/owlmock.zip --data-dir /srv/owlmock/data
+```
+
+### Reverse proxies and troubleshooting
+
+Terminate TLS at the reverse proxy and proxy the whole application to port 8000.
+The frontend, `/api`, and `/ws` share one origin, so do not split them into
+different public services. A minimal Caddy configuration is:
+
+```caddy
+owlmock.example.com {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+The image enables proxy headers, so standard `X-Forwarded-For` and
+`X-Forwarded-Proto` headers are honored. Keep `OWLMOCK_COOKIE_SECURE=true` behind
+HTTPS. When troubleshooting, start with `docker compose logs -f app` and
+`curl http://127.0.0.1:8000/api/health/live`. An unhealthy readiness check usually
+means `OWLMOCK_SESSION_SECRET` or the writable `/data` volume is missing; a login
+that stops working after deployment usually means the session secret changed. Missing data after a redeploy means
+the service no longer has its original `/data` volume attached.
 
 ## License
 

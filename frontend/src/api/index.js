@@ -71,8 +71,15 @@ function upload(path, file) {
 }
 
 export const api = {
-  login(password) {
-    return request('/auth/login', json('POST', { password }))
+  register({ email, password, displayName }) {
+    return request('/auth/register', json('POST', {
+      email,
+      password,
+      display_name: displayName || null,
+    }))
+  },
+  login({ email, password }) {
+    return request('/auth/login', json('POST', { email, password }))
   },
   getAuthSession() {
     return request('/auth/session')

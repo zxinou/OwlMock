@@ -52,7 +52,11 @@ def test_clean_database_upgrades_to_project_schema(tmp_path: Path) -> None:
 
     engine = create_engine(f"sqlite:///{database.as_posix()}")
     inspector = inspect(engine)
+    assert "users" in inspector.get_table_names()
     assert "job_projects" in inspector.get_table_names()
+    assert "user_id" in {
+        column["name"] for column in inspector.get_columns("repo_analyses")
+    }
     assert "project_id" in {column["name"] for column in inspector.get_columns("sessions")}
     assert "project_id" in {
         column["name"] for column in inspector.get_columns("jd_analyses")

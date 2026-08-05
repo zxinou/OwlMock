@@ -15,11 +15,16 @@ class Settings(BaseSettings):
     ZHIPU_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4"
     GITHUB_TOKEN: str = ""
 
-    # Single-owner deployment authentication.
+    # Public account authentication. The admin fields are retained for an
+    # optional first-account bootstrap during upgrades from single-owner installs.
     OWLMOCK_ADMIN_PASSWORD: str = ""
+    OWLMOCK_BOOTSTRAP_EMAIL: str = ""
+    OWLMOCK_ALLOW_REGISTRATION: bool = True
     OWLMOCK_SESSION_SECRET: str = ""
     OWLMOCK_SESSION_DAYS: int = 7
     OWLMOCK_COOKIE_SECURE: bool = True
+    OWLMOCK_AUTH_RATE_LIMIT: int = 8
+    OWLMOCK_AUTH_RATE_WINDOW_SECONDS: int = 300
 
     # Network acceleration for GitHub analysis.
     # HTTP(S)_PROXY is intentionally supported because tools like Clash/V2ray

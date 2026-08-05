@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from starlette.websockets import WebSocketDisconnect
 
 from agent.llm.base import BaseLLM
 from agent.llm.events import Done, TextDelta, Usage
@@ -97,12 +98,12 @@ async def test_get_session_events(async_client: AsyncClient):
 
 
 def test_websocket_connection(client: TestClient):
-    """Test: WebSocket connection and message exchange."""
-    with client.websocket_connect("/ws/voice/missing-session") as websocket:
-        event = websocket.receive_json()
+    """Missing or foreign sessions are rejected before a voice socket opens."""
+    with pytest.raises(WebSocketDisconnect) as error:
+        with client.websocket_connect("/ws/voice/missing-session"):
+            pass
 
-    assert event["type"] == "error"
-    assert event["payload"]["code"] == "session_not_found"
+    assert error.value.code == 4404
 
 
 def test_health_check(client):

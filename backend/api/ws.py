@@ -10,7 +10,7 @@ from agent.factory import AgentFactory, RealtimeNotConfigured
 from agent.loop import CancelToken
 from api.chat import _load_session_context
 from api.schemas import EventType, FrontendEvent
-from security.session import OWNER_ID, SESSION_COOKIE, SessionSigner
+from security.session import SESSION_COOKIE, SessionSigner
 from storage.session.store import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,8 @@ async def voice_websocket(
         signer = SessionSigner.from_settings(websocket.app.state.settings)
         websocket.app.state.session_signer = signer
     token = websocket.cookies.get(SESSION_COOKIE)
-    if not token or signer.verify(token) is None:
+    payload = signer.verify(token) if token else None
+    if payload is None:
         await websocket.close(code=4401, reason="Authentication required")
         return
 
@@ -70,13 +71,19 @@ async def voice_websocket(
             await websocket.close(code=4403, reason="Cross-origin request rejected")
             return
 
+    user_id = str(payload["sub"])
+    try:
+        await _load_session_context(session_id, user_id)
+    except HTTPException:
+        await websocket.close(code=4404, reason="Session not found")
+        return
+
     await websocket.accept()
 
     agent_factory: AgentFactory = websocket.app.state.agent_factory
     session_store: SessionStore = websocket.app.state.session_store
 
     profile_id = websocket.query_params.get("profile", "interviewer-technical")
-    user_id = OWNER_ID
     mode = websocket.query_params.get("mode", "voice")
 
     if mode == "voice":
@@ -111,7 +118,7 @@ async def _handle_voice_mode(
     """Handle voice mode WebSocket connection."""
     # Load session context
     try:
-        ctx = await _load_session_context(session_id)
+        ctx = await _load_session_context(session_id, user_id)
     except HTTPException as e:
         await _ws_send_error(websocket, "session_not_found", str(e.detail))
         return

@@ -11,6 +11,7 @@ import {
 } from 'lucide-vue-next'
 
 import OwlLogo from '@/components/common/OwlLogo.vue'
+import { authStore } from '@/stores/auth.js'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -28,7 +29,19 @@ const navItems = [
   { label: 'GitHub 分析', to: { name: 'github-list' }, match: '/analysis/github', icon: Github },
 ]
 
-const ownerInitials = computed(() => 'OW')
+const accountName = computed(() => (
+  authStore.user?.display_name
+  || authStore.user?.email?.split('@')[0]
+  || '我的求职空间'
+))
+const accountDetail = computed(() => authStore.user?.email || '个人工作区')
+const ownerInitials = computed(() => accountName.value
+  .trim()
+  .split(/\s+/)
+  .map((part) => part.slice(0, 1))
+  .join('')
+  .slice(0, 2)
+  .toUpperCase())
 const navigationHidden = computed(() => mobile.value && !props.open)
 
 function syncMobile(event) {
@@ -70,8 +83,8 @@ onBeforeUnmount(() => mobileMedia?.removeEventListener('change', syncMobile))
     <div class="app-sidebar__owner">
       <span class="app-sidebar__avatar" aria-hidden="true">{{ ownerInitials }}</span>
       <span class="app-sidebar__owner-copy">
-        <strong>我的求职空间</strong>
-        <small>个人自部署实例</small>
+        <strong>{{ accountName }}</strong>
+        <small>{{ accountDetail }}</small>
       </span>
     </div>
 

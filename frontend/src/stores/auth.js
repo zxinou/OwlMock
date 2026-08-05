@@ -7,19 +7,26 @@ export function createAuthStore(client = api) {
     ready: false,
     loading: false,
     authenticated: false,
+    user: null,
+    userId: null,
     ownerId: null,
     error: '',
+    applySession(session) {
+      store.authenticated = Boolean(session?.authenticated)
+      store.user = session?.user || null
+      store.userId = store.user?.id || null
+      // Kept as a compatibility alias for code written before public accounts.
+      store.ownerId = store.userId
+    },
     async bootstrap() {
       if (store.ready || store.loading) return store.authenticated
       store.loading = true
       store.error = ''
       try {
         const session = await client.getAuthSession()
-        store.authenticated = Boolean(session.authenticated)
-        store.ownerId = session.owner_id || null
+        store.applySession(session)
       } catch (error) {
-        store.authenticated = false
-        store.ownerId = null
+        store.markSignedOut()
         if (error.status !== 401) store.error = error.message
       } finally {
         store.ready = true
@@ -27,13 +34,27 @@ export function createAuthStore(client = api) {
       }
       return store.authenticated
     },
-    async login(password) {
+    async register(input) {
       store.loading = true
       store.error = ''
       try {
-        const session = await client.login(password)
-        store.authenticated = true
-        store.ownerId = session.owner_id || 'default'
+        const session = await client.register(input)
+        store.applySession(session)
+        store.ready = true
+        return session
+      } catch (error) {
+        store.error = error.message
+        throw error
+      } finally {
+        store.loading = false
+      }
+    },
+    async login(input) {
+      store.loading = true
+      store.error = ''
+      try {
+        const session = await client.login(input)
+        store.applySession(session)
         store.ready = true
         return session
       } catch (error) {
@@ -55,6 +76,8 @@ export function createAuthStore(client = api) {
     markSignedOut() {
       store.ready = true
       store.authenticated = false
+      store.user = null
+      store.userId = null
       store.ownerId = null
     },
   })
@@ -62,4 +85,3 @@ export function createAuthStore(client = api) {
 }
 
 export const authStore = createAuthStore()
-

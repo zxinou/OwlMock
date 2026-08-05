@@ -31,6 +31,7 @@ from api.system import router as system_router
 from api.tasks import router as tasks_router
 from api.ws import router as ws_router
 from config.settings import settings
+from security.bootstrap import ensure_bootstrap_user
 from storage.db.engine import init_db
 from storage.session.store import SessionStore
 from tool.builtins import TOOLS
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     # Initialize database
     await init_db()
+    await ensure_bootstrap_user(settings)
 
     # Load profiles
     profile_loader = ProfileLoader("config/agents")

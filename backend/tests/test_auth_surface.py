@@ -16,6 +16,7 @@ PUBLIC_HTTP_ROUTES = {
     ("GET", "/{full_path:path}"),
     ("HEAD", "/{full_path:path}"),
     ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/register"),
     ("GET", "/api/health/live"),
     ("GET", "/api/health/ready"),
 }

@@ -40,12 +40,8 @@ async def ready(
     runtime_settings: Settings = Depends(get_runtime_settings),
 ) -> dict[str, object]:
     missing: list[str] = []
-    if not runtime_settings.OWLMOCK_ADMIN_PASSWORD:
-        missing.append("OWLMOCK_ADMIN_PASSWORD")
-    if not (
-        runtime_settings.DASHSCOPE_API_KEY or runtime_settings.ZHIPU_API_KEY
-    ):
-        missing.append("DASHSCOPE_API_KEY or ZHIPU_API_KEY")
+    if not runtime_settings.OWLMOCK_SESSION_SECRET:
+        missing.append("OWLMOCK_SESSION_SECRET")
     storage = _storage_status(runtime_settings)
     if not storage["ready"]:
         missing.append("writable OWLMOCK_DATA_DIR")
@@ -69,6 +65,10 @@ async def system_status(
             "kind": "sqlite",
         },
         "capabilities": {
+            "accounts": {
+                "ready": True,
+                "registration_open": runtime_settings.OWLMOCK_ALLOW_REGISTRATION,
+            },
             "analysis": {"ready": provider is not None, "provider": provider},
             "voice": {
                 "ready": bool(runtime_settings.DASHSCOPE_API_KEY),

@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from agent.factory import AgentFactory
 from agent.loop import CancelToken
-from api.deps import get_agent_factory, get_session_store
+from api.deps import get_agent_factory, get_session_store, require_owner
 from api.schemas import EventType, FrontendEvent
 from security.session import OWNER_ID
 from storage.db.engine import async_session_factory
@@ -55,7 +55,10 @@ def _get_or_create_session_state(session_id: str) -> dict:
     return _active_sessions[session_id]
 
 
-async def _load_session_context(session_id: str) -> dict:
+async def _load_session_context(
+    session_id: str,
+    user_id: str = OWNER_ID,
+) -> dict:
     """Load session metadata, resume content, and repo analyses from DB.
 
     Returns dict with user_id, profile_id, resume_id, resume_content, github_repos.
@@ -65,7 +68,7 @@ async def _load_session_context(session_id: str) -> dict:
         result = await db.execute(
             select(Session).where(
                 Session.id == session_id,
-                Session.user_id == OWNER_ID,
+                Session.user_id == user_id,
             )
         )
         session = result.scalar_one_or_none()
@@ -102,7 +105,10 @@ async def _load_session_context(session_id: str) -> dict:
         # Load resume content if available
         if session.resume_id:
             resume_result = await db.execute(
-                select(Resume).where(Resume.id == session.resume_id)
+                select(Resume).where(
+                    Resume.id == session.resume_id,
+                    Resume.user_id == user_id,
+                )
             )
             resume = resume_result.scalar_one_or_none()
             if resume and resume.content:
@@ -116,6 +122,7 @@ async def _load_session_context(session_id: str) -> dict:
                     select(RepoAnalysis).where(
                         RepoAnalysis.id.in_(repo_ids),
                         RepoAnalysis.status == "done",
+                        RepoAnalysis.user_id == user_id,
                     )
                 )
                 repos = repo_result.scalars().all()
@@ -132,12 +139,13 @@ async def send_message(
     request: SendMessageRequest,
     agent_factory: AgentFactory = Depends(get_agent_factory),
     session_store: SessionStore = Depends(get_session_store),
+    user_id: str = Depends(require_owner),
 ):
     """Send a user message and trigger agent processing (for SSE stream)."""
     state = _get_or_create_session_state(session_id)
 
     # Load session context from DB
-    ctx = await _load_session_context(session_id)
+    ctx = await _load_session_context(session_id, user_id)
 
     # Get session events
     events = session_store.read_events(ctx["user_id"], session_id)
@@ -196,10 +204,11 @@ async def chat(
     request: ChatRequest,
     agent_factory: AgentFactory = Depends(get_agent_factory),
     session_store: SessionStore = Depends(get_session_store),
+    user_id: str = Depends(require_owner),
 ):
     """Synchronous chat - wait for complete response."""
     # Load session context from DB
-    ctx = await _load_session_context(session_id)
+    ctx = await _load_session_context(session_id, user_id)
 
     # Get session events
     events = session_store.read_events(ctx["user_id"], session_id)
@@ -288,8 +297,10 @@ async def _run_agent(
 @router.post("/sessions/{session_id}/interrupt")
 async def interrupt_agent(
     session_id: str,
+    user_id: str = Depends(require_owner),
 ):
     """Interrupt the running agent."""
+    await _load_session_context(session_id, user_id)
     state = _get_or_create_session_state(session_id)
     state["cancel_token"].cancel()
     return {"status": "ok", "session_id": session_id}
@@ -299,6 +310,7 @@ async def interrupt_agent(
 async def stream_events(
     session_id: str,
     session_store: SessionStore = Depends(get_session_store),
+    user_id: str = Depends(require_owner),
 ):
     """SSE endpoint for streaming events."""
     state = _get_or_create_session_state(session_id)
@@ -308,7 +320,7 @@ async def stream_events(
         result = await db.execute(
             select(Session).where(
                 Session.id == session_id,
-                Session.user_id == OWNER_ID,
+                Session.user_id == user_id,
             )
         )
         session = result.scalar_one_or_none()

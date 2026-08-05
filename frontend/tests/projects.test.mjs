@@ -229,6 +229,8 @@ test('project routes expose list, create, workspace, and recoverable task URLs',
   assert.equal(byName['project-workspace'].path, '/projects/:projectId')
   assert.equal(byName['project-jd-task'].path, '/projects/:projectId/jd/tasks/:taskId')
   assert.equal(byName['project-resume-task'].path, '/projects/:projectId/resume/tasks/:taskId')
+  assert.equal(byName['project-jd-task'].meta.appShell, true)
+  assert.equal(byName['project-resume-task'].meta.appShell, true)
 })
 
 test('interview configuration creates a project-scoped session when project context exists', async (t) => {

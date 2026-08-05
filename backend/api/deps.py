@@ -6,7 +6,7 @@ from fastapi import Cookie, Depends, HTTPException, Request
 
 from agent.factory import AgentFactory
 from config.settings import Settings, settings
-from security.session import OWNER_ID, SESSION_COOKIE, SessionSigner
+from security.session import SESSION_COOKIE, SessionSigner
 from storage.session.store import SessionStore
 
 
@@ -29,15 +29,16 @@ def require_owner(
     token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
     signer: SessionSigner = Depends(get_session_signer),
 ) -> str:
-    if not token or signer.verify(token) is None:
+    payload = signer.verify(token) if token else None
+    if payload is None:
         raise HTTPException(
             status_code=401,
             detail={
                 "code": "authentication_required",
-                "message": "Please sign in to this OwlMock instance.",
+                "message": "Please sign in to OwlMock.",
             },
         )
-    return OWNER_ID
+    return str(payload["sub"])
 
 
 def enforce_same_origin(request: Request) -> None:

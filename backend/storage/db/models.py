@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -11,13 +21,32 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    """A public OwlMock account that owns all user-scoped records."""
+
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True)
+    email = Column(String, nullable=False, unique=True, index=True)
+    display_name = Column(String, nullable=True)
+    password_hash = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
 class JobProject(Base):
     """One concrete target role and its active preparation context."""
 
     __tablename__ = "job_projects"
 
     id = Column(String, primary_key=True)
-    user_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, default="default", index=True)
     title = Column(String, nullable=False, default="Untitled role")
     company = Column(String, nullable=True)
     location = Column(String, nullable=True)
@@ -76,9 +105,15 @@ class RepoAnalysis(Base):
     """GitHub repository analysis result stored in SQLite."""
 
     __tablename__ = "repo_analyses"
+    __table_args__ = (
+        UniqueConstraint("user_id", "url", name="uq_repo_analyses_user_url"),
+    )
 
     id = Column(String, primary_key=True)
-    url = Column(String, nullable=False, unique=True)
+    # Legacy tools and tests construct repository records directly. Public API
+    # paths always pass the authenticated user ID; this preserves old local data.
+    user_id = Column(String, nullable=False, default="default", index=True)
+    url = Column(String, nullable=False)
     owner = Column(String, nullable=False)
     repo = Column(String, nullable=False)
     status = Column(String, nullable=False, default="pending")  # pending, running, done, failed
