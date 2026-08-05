@@ -25,14 +25,14 @@
 - Test: `backend/tests/test_system_status.py`
 - Test: `backend/tests/test_settings.py`
 
-- [ ] Add failing tests proving that data paths derive from `OWLMOCK_DATA_DIR`, health is public, protected APIs reject anonymous requests, login sets an HttpOnly SameSite cookie, logout clears it, and status never returns secret values.
-- [ ] Run `uv run pytest tests/test_auth.py tests/test_system_status.py tests/test_settings.py -q` and confirm the new tests fail before implementation.
-- [ ] Add `itsdangerous` and implement `SessionSigner` with payload `{"sub":"default","iat":<unix>}` and a seven-day max age.
-- [ ] Add `require_owner()` for REST and `authenticate_websocket()` for WebSocket; identity always resolves to internal owner `default` and never from client input.
-- [ ] Add `/api/auth/login`, `/api/auth/session`, `/api/auth/logout`, `/api/health/live`, `/api/health/ready`, and authenticated `/api/system/status`.
-- [ ] Derive `SQLITE_PATH`, `JSONL_ROOT`, `RESUME_ROOT`, `JD_UPLOAD_ROOT`, `MEMORY_ROOT`, and `REPO_ROOT` from `OWLMOCK_DATA_DIR` unless explicitly overridden.
-- [ ] Run the focused tests, then `uv run pytest -q` for backend regression.
-- [ ] Commit as `feat: add secure single-owner runtime foundation`.
+- [x] Add failing tests proving that data paths derive from `OWLMOCK_DATA_DIR`, health is public, protected APIs reject anonymous requests, login sets an HttpOnly SameSite cookie, logout clears it, and status never returns secret values.
+- [x] Run `uv run pytest tests/test_auth.py tests/test_system_status.py tests/test_settings.py -q` and confirm the new tests fail before implementation.
+- [x] Add `itsdangerous` and implement `SessionSigner` with payload `{"sub":"default","iat":<unix>}` and a seven-day max age.
+- [x] Add `require_owner()` for REST; identity always resolves to internal owner `default` and never from client input. WebSocket enforcement remains in Task 4 with the full protected-surface inventory.
+- [x] Add `/api/auth/login`, `/api/auth/session`, `/api/auth/logout`, `/api/health/live`, `/api/health/ready`, and authenticated `/api/system/status`.
+- [x] Derive `SQLITE_PATH`, `JSONL_ROOT`, `RESUME_ROOT`, `JD_UPLOAD_ROOT`, `MEMORY_ROOT`, and `REPO_ROOT` from `OWLMOCK_DATA_DIR` unless explicitly overridden.
+- [x] Run the focused tests, then `uv run pytest -q` for backend regression (`409 passed`).
+- [x] Commit as `feat: add secure single-owner runtime foundation`.
 
 ### Task 2: Versioned Database and Job Project Model
 

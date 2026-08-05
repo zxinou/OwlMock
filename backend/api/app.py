@@ -8,14 +8,17 @@ from fastapi import FastAPI
 from agent.context.skill_loader import SkillLoader
 from agent.factory import AgentFactory
 from agent.profile_loader import ProfileLoader
+from api.auth import router as auth_router
 from api.chat import router as sse_router
 from api.github_analysis import router as analysis_router
 from api.jd_analysis import router as jd_router
 from api.resume_analysis import router as resume_router
 from api.resume_matches import router as resume_matches_router
 from api.sessions import router as api_router
+from api.system import router as system_router
 from api.tasks import router as tasks_router
 from api.ws import router as ws_router
+from config.settings import settings
 from storage.db.engine import init_db
 from storage.session.store import SessionStore
 from tool.builtins import TOOLS
@@ -25,6 +28,7 @@ from tool.registry import ToolRegistry
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
+    app.state.settings = settings
     # Initialize database
     await init_db()
 
@@ -79,6 +83,8 @@ app = FastAPI(
 
 # Include routers
 app.include_router(api_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+app.include_router(system_router, prefix="/api")
 app.include_router(sse_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
 app.include_router(analysis_router, prefix="/api")

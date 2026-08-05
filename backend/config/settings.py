@@ -1,5 +1,7 @@
+from pathlib import Path
 from typing import ClassVar
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -12,6 +14,12 @@ class Settings(BaseSettings):
     ZHIPU_API_KEY: str = ""
     ZHIPU_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4"
     GITHUB_TOKEN: str = ""
+
+    # Single-owner deployment authentication.
+    OWLMOCK_ADMIN_PASSWORD: str = ""
+    OWLMOCK_SESSION_SECRET: str = ""
+    OWLMOCK_SESSION_DAYS: int = 7
+    OWLMOCK_COOKIE_SECURE: bool = True
 
     # Network acceleration for GitHub analysis.
     # HTTP(S)_PROXY is intentionally supported because tools like Clash/V2ray
@@ -60,25 +68,67 @@ class Settings(BaseSettings):
     def langfuse_base_url(self) -> str:
         return self.LANGFUSE_BASE_URL or self.LANGFUSE_HOST
 
-    # Storage
-    SQLITE_PATH: str = "storage/db/app.db"
-    JSONL_ROOT: str = "storage/sessions"
+    # Storage. Fine-grained paths remain supported as explicit overrides.
+    OWLMOCK_DATA_DIR: str = ""
+    SQLITE_PATH: str = ""
+    JSONL_ROOT: str = ""
 
     # Voice / Realtime
     VOICE_DEFAULT_SESSION_MINUTES: int = 15
     VOICE_INACTIVITY_TIMEOUT_SECONDS: int = 300
 
     # Resume storage
-    RESUME_ROOT: str = "data/resumes"
+    RESUME_ROOT: str = ""
 
     # JD image task storage stays outside backend so reload ignores uploads.
-    JD_UPLOAD_ROOT: str = "../analysis_cache/jd_uploads"
+    JD_UPLOAD_ROOT: str = ""
 
     # Repo analysis & memory
-    REPO_ROOT: str = "../repo_cache"
-    MEMORY_ROOT: str = "storage/memory"
+    REPO_ROOT: str = ""
+    MEMORY_ROOT: str = ""
     CLONE_TIMEOUT: int = 120
     MAX_REPO_FILES: int = 10000
+
+    @model_validator(mode="after")
+    def resolve_storage_paths(self) -> "Settings":
+        """Derive all mutable paths from one root unless explicitly overridden."""
+        legacy_defaults = {
+            "SQLITE_PATH": Path("storage/db/app.db"),
+            "JSONL_ROOT": Path("storage/sessions"),
+            "RESUME_ROOT": Path("storage/resumes"),
+            "JD_UPLOAD_ROOT": Path("../analysis_cache/jd_uploads"),
+            "REPO_ROOT": Path("../repo_cache"),
+            "MEMORY_ROOT": Path("storage/memory"),
+        }
+        if self.OWLMOCK_DATA_DIR:
+            root = Path(self.OWLMOCK_DATA_DIR)
+            defaults = {
+                "SQLITE_PATH": root / "db" / "app.db",
+                "JSONL_ROOT": root / "sessions",
+                "RESUME_ROOT": root / "resumes",
+                "JD_UPLOAD_ROOT": root / "jd_uploads",
+                "REPO_ROOT": root / "repo_cache",
+                "MEMORY_ROOT": root / "memory",
+            }
+        else:
+            defaults = legacy_defaults
+
+        for field, path in defaults.items():
+            current = getattr(self, field)
+            is_legacy_default = (
+                self.OWLMOCK_DATA_DIR
+                and current
+                and Path(current) == legacy_defaults[field]
+            )
+            if not current or is_legacy_default:
+                object.__setattr__(self, field, str(path))
+        return self
+
+    @property
+    def data_dir(self) -> Path:
+        if self.OWLMOCK_DATA_DIR:
+            return Path(self.OWLMOCK_DATA_DIR)
+        return Path(self.SQLITE_PATH).parent.parent
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
