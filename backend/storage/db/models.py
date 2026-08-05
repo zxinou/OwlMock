@@ -11,6 +11,38 @@ class Base(DeclarativeBase):
     pass
 
 
+class JobProject(Base):
+    """One concrete target role and its active preparation context."""
+
+    __tablename__ = "job_projects"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False, default="Untitled role")
+    company = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    current_jd_analysis_id = Column(
+        String,
+        ForeignKey(
+            "jd_analyses.id",
+            name="fk_job_projects_current_jd_analysis_id",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
+        nullable=True,
+        index=True,
+    )
+    current_resume_id = Column(
+        String,
+        ForeignKey("resumes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    archived_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Session(Base):
     """Session metadata stored in SQLite."""
 
@@ -19,7 +51,8 @@ class Session(Base):
     id = Column(String, primary_key=True)
     user_id = Column(String, nullable=False, index=True)
     profile_id = Column(String, nullable=False)
-    status = Column(String, nullable=False, default="active")  # active, paused, completed, abandoned
+    # active, paused, completed, abandoned
+    status = Column(String, nullable=False, default="active")
     mode = Column(String, nullable=False, default="text")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -27,6 +60,12 @@ class Session(Base):
     event_count = Column(Integer, nullable=False, default=0)
     turn_count = Column(Integer, nullable=False, default=0)
     summary = Column(Text, nullable=True)  # JSON string of summary dict
+    project_id = Column(
+        String,
+        ForeignKey("job_projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     resume_id = Column(String, ForeignKey("resumes.id"), nullable=True, index=True)
     github_repo_ids = Column(Text, nullable=True)  # JSON array of repo analysis IDs
     audio_seconds_in = Column(Float, nullable=False, default=0.0)
@@ -60,6 +99,12 @@ class JdAnalysisRecord(Base):
 
     id = Column(String, primary_key=True)
     user_id = Column(String, nullable=False, index=True)
+    project_id = Column(
+        String,
+        ForeignKey("job_projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     text = Column(Text, nullable=False)
     result_json = Column(Text, nullable=False)
     source_type = Column(String, nullable=False, default="text")
@@ -96,6 +141,12 @@ class ResumeMatchRecord(Base):
 
     id = Column(String, primary_key=True)
     user_id = Column(String, nullable=False, index=True)
+    project_id = Column(
+        String,
+        ForeignKey("job_projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     resume_id = Column(String, ForeignKey("resumes.id"), nullable=False, index=True)
     jd_analysis_id = Column(
         String, ForeignKey("jd_analyses.id"), nullable=True, index=True

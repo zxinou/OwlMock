@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-from sqlalchemy import inspect, select, text
+from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from storage.db.models import (
@@ -213,44 +213,6 @@ class TestJdAnalysisRecord:
         assert row.error is None
         assert row.updated_at is not None
 
-    async def test_old_jd_table_migration_marks_existing_rows_completed(self) -> None:
-        from storage.db.engine import _ensure_jd_analysis_columns
-
-        engine = create_async_engine("sqlite+aiosqlite://", echo=False)
-        async with engine.begin() as conn:
-            await conn.execute(
-                text(
-                    "CREATE TABLE jd_analyses ("
-                    "id VARCHAR PRIMARY KEY, user_id VARCHAR NOT NULL, "
-                    "text TEXT NOT NULL, result_json TEXT NOT NULL, created_at DATETIME)"
-                )
-            )
-            await conn.execute(
-                text(
-                    "INSERT INTO jd_analyses "
-                    "(id, user_id, text, result_json) VALUES "
-                    "('legacy', 'user-1', 'Legacy JD', '{\"requirements\": []}')"
-                )
-            )
-            await conn.run_sync(_ensure_jd_analysis_columns)
-
-            row = (
-                await conn.execute(
-                    text(
-                        "SELECT status, stage, progress, source_type, result_json "
-                        "FROM jd_analyses WHERE id = 'legacy'"
-                    )
-                )
-            ).mappings().one()
-
-        await engine.dispose()
-        assert row["status"] == "completed"
-        assert row["stage"] == "completed"
-        assert row["progress"] == 1.0
-        assert row["source_type"] == "text"
-        assert row["result_json"] == '{"requirements": []}'
-
-
 class TestSessionResumeId:
     """Test Session.resume_id field."""
 
@@ -304,25 +266,3 @@ class TestInitDb:
         assert "sessions" in table_names
 
         await engine.dispose()
-
-    async def test_old_resume_match_table_gets_batch_link_columns(self) -> None:
-        from storage.db.engine import _ensure_resume_match_columns
-
-        engine = create_async_engine("sqlite+aiosqlite://", echo=False)
-        async with engine.begin() as conn:
-            await conn.execute(text(
-                "CREATE TABLE resume_matches ("
-                "id VARCHAR PRIMARY KEY, user_id VARCHAR NOT NULL, "
-                "resume_id VARCHAR NOT NULL, job_description TEXT NOT NULL)"
-            ))
-            await conn.run_sync(_ensure_resume_match_columns)
-            columns = await conn.run_sync(
-                lambda sync_conn: {
-                    column["name"]
-                    for column in inspect(sync_conn).get_columns("resume_matches")
-                }
-            )
-
-        await engine.dispose()
-        assert "jd_analysis_id" in columns
-        assert "batch_id" in columns

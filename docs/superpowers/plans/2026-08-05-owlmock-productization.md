@@ -48,12 +48,12 @@
 - Test: `backend/tests/test_migrations.py`
 - Test: `backend/tests/test_job_project_models.py`
 
-- [ ] Add failing tests for clean-database upgrade and upgrade of a fixture legacy database containing existing `default` rows.
-- [ ] Add `JobProject(id,user_id,title,company,location,current_jd_analysis_id,current_resume_id,archived_at,created_at,updated_at)` and nullable indexed `project_id` columns on JD analyses, resume matches, and sessions.
-- [ ] Replace ad hoc startup ALTER calls with a migration runner that validates and stamps the legacy baseline before upgrading to head.
-- [ ] Enable SQLite foreign keys, WAL, and busy timeout on every connection.
-- [ ] Verify old rows remain readable with `project_id = NULL` and no existing file path is changed.
-- [ ] Commit as `feat: add versioned job project schema`.
+- [x] Add failing tests for clean-database upgrade and upgrade of a fixture legacy database containing existing `default` rows.
+- [x] Add `JobProject(id,user_id,title,company,location,current_jd_analysis_id,current_resume_id,archived_at,created_at,updated_at)` and nullable indexed `project_id` columns on JD analyses, resume matches, and sessions.
+- [x] Replace ad hoc startup ALTER calls with a migration runner that validates and stamps the legacy baseline before upgrading to head.
+- [x] Enable SQLite foreign keys, WAL, and busy timeout on every connection.
+- [x] Verify old rows remain readable with `project_id = NULL` and no existing file path is changed.
+- [x] Commit as `feat: add versioned job project schema`.
 
 ### Task 3: Project Service and API
 
