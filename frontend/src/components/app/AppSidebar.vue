@@ -136,6 +136,11 @@ function isActive(item) {
   border-radius: 6px;
 }
 
+:global(.dark) .app-sidebar__logo :deep(.owl-avatar) {
+  filter: none;
+  opacity: 1;
+}
+
 .app-sidebar__brand-name,
 .app-sidebar__link-label,
 .app-sidebar__owner-copy,

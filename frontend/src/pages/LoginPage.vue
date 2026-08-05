@@ -138,6 +138,12 @@ async function submit() {
   border-radius: 7px;
 }
 
+:global(.dark) .login-page__logo :deep(.owl-avatar),
+:global(.dark) .login-page__owl :deep(.owl-avatar) {
+  filter: none;
+  opacity: 1;
+}
+
 .login-page__brand-copy {
   width: min(100%, 470px);
   margin: auto 0;
