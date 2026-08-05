@@ -14,6 +14,7 @@ const {
   selectedMode,
   isConfigValid,
   starting,
+  startError,
   handleStartInterview,
   handleGoToUpload,
   handleGoToAnalysis,
@@ -167,6 +168,8 @@ function formatDate(iso) {
           {{ starting ? '创建中...' : '开始面试 →' }}
         </button>
       </div>
+
+      <p v-if="startError" class="text-sm text-accent text-center" role="alert">{{ startError }}</p>
 
       <p v-if="!isConfigValid" class="text-sm text-ink-muted text-center">
         请选择简历和面试类型后开始面试

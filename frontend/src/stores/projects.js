@@ -13,6 +13,8 @@ export function createProjectsStore(client = api) {
     async load(options = {}) {
       store.loading = true
       store.error = ''
+      store.items = []
+      store.total = 0
       try {
         const payload = await client.getProjects(options)
         store.items = payload.items
@@ -44,7 +46,16 @@ export function createProjectsStore(client = api) {
       store.error = ''
       try {
         const project = await client.createProject({ title, company, location })
-        const task = await client.submitProjectJd(project.id, jdText)
+        let task
+        try {
+          task = await client.submitProjectJd(project.id, jdText)
+        } catch (error) {
+          error.projectId = project.id
+          store.current = project
+          store.items.unshift(project)
+          store.total += 1
+          throw error
+        }
         store.items.unshift(project)
         store.total += 1
         return { project, taskId: task.task_id, task }
@@ -60,7 +71,16 @@ export function createProjectsStore(client = api) {
       store.error = ''
       try {
         const project = await client.createProject({ title, company, location })
-        const task = await client.submitProjectJdImage(project.id, file)
+        let task
+        try {
+          task = await client.submitProjectJdImage(project.id, file)
+        } catch (error) {
+          error.projectId = project.id
+          store.current = project
+          store.items.unshift(project)
+          store.total += 1
+          throw error
+        }
         store.items.unshift(project)
         store.total += 1
         return { project, taskId: task.task_id, task }
@@ -89,6 +109,20 @@ export function createProjectsStore(client = api) {
       store.error = ''
       try {
         return await client.submitProjectResumeMatch(projectId, resumeId)
+      } catch (error) {
+        store.error = error.message
+        throw error
+      } finally {
+        store.saving = false
+      }
+    },
+    async submitJd(projectId, { text = '', file = null } = {}) {
+      store.saving = true
+      store.error = ''
+      try {
+        return file
+          ? await client.submitProjectJdImage(projectId, file)
+          : await client.submitProjectJd(projectId, text)
       } catch (error) {
         store.error = error.message
         throw error

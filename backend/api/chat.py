@@ -16,7 +16,7 @@ from api.deps import get_agent_factory, get_session_store
 from api.schemas import EventType, FrontendEvent
 from security.session import OWNER_ID
 from storage.db.engine import async_session_factory
-from storage.db.models import RepoAnalysis, Resume, Session
+from storage.db.models import JdAnalysisRecord, JobProject, RepoAnalysis, Resume, Session
 from storage.session.store import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -76,10 +76,28 @@ async def _load_session_context(session_id: str) -> dict:
         ctx = {
             "user_id": session.user_id,
             "profile_id": session.profile_id,
+            "project_id": session.project_id,
+            "job_description": "",
             "resume_id": session.resume_id,
             "resume_content": "",
             "github_repos": [],
         }
+
+        if session.project_id:
+            project = await db.get(JobProject, session.project_id)
+            if (
+                project is not None
+                and project.user_id == session.user_id
+                and project.current_jd_analysis_id
+            ):
+                jd = await db.get(JdAnalysisRecord, project.current_jd_analysis_id)
+                if (
+                    jd is not None
+                    and jd.user_id == session.user_id
+                    and jd.project_id == project.id
+                    and jd.status == "completed"
+                ):
+                    ctx["job_description"] = jd.text
 
         # Load resume content if available
         if session.resume_id:
@@ -151,6 +169,7 @@ async def send_message(
                 mode="text",
                 user_id=ctx["user_id"],
                 resume_content=ctx["resume_content"],
+                job_description=ctx["job_description"],
                 github_repos=ctx["github_repos"],
                 resume_id=ctx["resume_id"],
             )
@@ -202,6 +221,7 @@ async def chat(
             mode="text",
             user_id=ctx["user_id"],
             resume_content=ctx["resume_content"],
+            job_description=ctx["job_description"],
             github_repos=ctx["github_repos"],
             resume_id=ctx["resume_id"],
         )

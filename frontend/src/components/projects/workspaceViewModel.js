@@ -47,6 +47,7 @@ export function createWorkspaceViewModel(project) {
   const focusItems = collectFocus(source.current_jd?.result)
 
   return {
+    readOnly: Boolean(source.archived_at),
     steps,
     score: Number.isFinite(Number(source.latest_match?.score))
       ? Number(source.latest_match.score)

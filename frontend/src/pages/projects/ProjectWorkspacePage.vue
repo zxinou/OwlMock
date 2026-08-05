@@ -15,6 +15,7 @@ const router = useRouter()
 const resumes = ref([])
 const resumeId = ref('')
 const localError = ref('')
+const jdText = ref('')
 
 const project = computed(() => projectsStore.current)
 const view = computed(() => createWorkspaceViewModel(project.value))
@@ -56,6 +57,20 @@ async function archiveProject() {
   }
 }
 
+async function startJd() {
+  if (jdText.value.trim().length < 20 || projectsStore.saving || view.value.readOnly) return
+  localError.value = ''
+  try {
+    const task = await projectsStore.submitJd(projectId.value, { text: jdText.value.trim() })
+    await router.push({
+      name: 'project-jd-task',
+      params: { projectId: projectId.value, taskId: task.task_id },
+    })
+  } catch (error) {
+    localError.value = error.message
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -83,11 +98,13 @@ onMounted(load)
             <span><MapPin :size="13" />{{ project.location || '地点待补充' }}</span>
           </div>
         </div>
-        <div class="project-workspace__header-actions">
+        <div v-if="!view.readOnly" class="project-workspace__header-actions">
           <button type="button" class="project-workspace__archive" @click="archiveProject"><Archive :size="15" />归档</button>
           <router-link :to="{ name: 'interview-config', query: { projectId } }" class="project-workspace__interview"><MessageSquareText :size="16" />开始模拟面试</router-link>
         </div>
       </header>
+
+      <p v-if="view.readOnly" class="project-workspace__archived">这个项目已归档，当前以只读方式保留报告与面试记录。</p>
 
       <p v-if="localError || projectsStore.error" class="project-workspace__notice" role="alert">{{ localError || projectsStore.error }}</p>
 
@@ -118,8 +135,16 @@ onMounted(load)
           </div>
           <p>{{ view.nextAction.description }}</p>
 
-          <template v-if="view.nextAction.key === 'job'">
-            <router-link :to="{ name: 'jd' }" class="project-workspace__action">补充 JD<ArrowRight :size="14" /></router-link>
+          <p v-if="view.readOnly" class="project-workspace__muted">归档项目不能启动新任务；历史数据仍可查看。</p>
+          <template v-else-if="view.nextAction.key === 'job'">
+            <div class="project-workspace__jd-action">
+              <label for="workspace-jd">岗位描述</label>
+              <textarea id="workspace-jd" v-model="jdText" rows="4" minlength="20" placeholder="粘贴完整 JD 后重新提交分析。" />
+              <button type="button" :disabled="jdText.trim().length < 20 || projectsStore.saving" @click="startJd">
+                <LoaderCircle v-if="projectsStore.saving" :size="15" class="spin" />
+                <FileSearch v-else :size="15" />提交 JD 分析
+              </button>
+            </div>
           </template>
           <template v-else-if="view.nextAction.key === 'resume'">
             <div v-if="resumes.length" class="project-workspace__resume-action">
@@ -168,6 +193,7 @@ onMounted(load)
 .project-workspace__archive { color:var(--color-ink-muted); border:1px solid var(--color-border); }
 .project-workspace__interview { color:#17312f; background:var(--color-secondary); }
 .project-workspace__notice { padding:.72rem .85rem; color:var(--color-accent); background:color-mix(in srgb,var(--color-accent) 8%,transparent); border-left:3px solid var(--color-accent); font-size:.72rem; }
+.project-workspace__archived { padding:.72rem .85rem; color:#6f5316; background:color-mix(in srgb,var(--color-secondary) 15%,transparent); border-left:3px solid var(--color-secondary); font-size:.72rem; }
 .project-workspace__feature-grid { display:grid; grid-template-columns:minmax(260px,.8fr) minmax(0,1.2fr); gap:1rem; }
 .project-workspace__lower-grid { display:grid; grid-template-columns:minmax(260px,.85fr) minmax(0,1.15fr); gap:1rem; }
 .project-workspace__summary,.project-workspace__next { padding:1.35rem 1.45rem; background:var(--color-white); border:1px solid var(--color-border); border-radius:8px; }
@@ -180,6 +206,10 @@ onMounted(load)
 .project-workspace__muted { color:var(--color-ink-muted); font-size:.68rem; }
 .project-workspace__next > p { margin:.9rem 0; color:var(--color-ink-muted); font-size:.72rem; line-height:1.55; }
 .project-workspace__resume-action { display:grid; gap:.45rem; }
+.project-workspace__jd-action { display:grid; gap:.45rem; }
+.project-workspace__jd-action label { color:var(--color-ink-light); font-size:.65rem; font-weight:700; }
+.project-workspace__jd-action textarea { width:100%; padding:.65rem; color:var(--color-ink); background:var(--color-base); border:1px solid var(--color-border); border-radius:5px; font-size:.7rem; line-height:1.5; resize:vertical; }
+.project-workspace__jd-action button { min-height:38px; display:flex; align-items:center; justify-content:center; gap:.4rem; color:#17312f; background:var(--color-secondary); border-radius:5px; font-size:.7rem; font-weight:750; }
 .project-workspace__resume-action label { color:var(--color-ink-light); font-size:.65rem; font-weight:700; }
 .project-workspace__resume-action select { width:100%; min-height:38px; padding:0 .65rem; color:var(--color-ink); background:var(--color-base); border:1px solid var(--color-border); border-radius:5px; font-size:.7rem; }
 .project-workspace__resume-action button { min-height:38px; display:flex; align-items:center; justify-content:center; gap:.4rem; color:#17312f; background:var(--color-secondary); border-radius:5px; font-size:.7rem; font-weight:750; }

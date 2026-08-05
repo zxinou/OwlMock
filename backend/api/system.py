@@ -75,6 +75,7 @@ async def system_status(
                 "provider": "dashscope_realtime"
                 if runtime_settings.DASHSCOPE_API_KEY
                 else None,
+                "max_session_minutes": runtime_settings.VOICE_DEFAULT_SESSION_MINUTES,
             },
             "github": {"ready": bool(runtime_settings.GITHUB_TOKEN)},
             "tracing": {"ready": runtime_settings.TRACER == "langfuse"},

@@ -43,6 +43,7 @@ def test_authenticated_status_reports_capabilities_without_secrets(tmp_path: Pat
     assert payload["storage"]["ready"] is True
     assert payload["capabilities"]["analysis"]["ready"] is True
     assert payload["capabilities"]["voice"]["ready"] is True
+    assert payload["capabilities"]["voice"]["max_session_minutes"] == 15
     assert payload["capabilities"]["github"]["ready"] is True
     serialized = response.text
     assert "dashscope-secret" not in serialized

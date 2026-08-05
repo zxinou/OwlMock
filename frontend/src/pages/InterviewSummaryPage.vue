@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
-import { eventsToMessages } from '@/utils/interviewHelpers.js'
+import { eventsToMessages, sessionReturnPath } from '@/utils/interviewHelpers.js'
 import AnalysisLayout from '@/layouts/AnalysisLayout.vue'
 import InterviewSummary from '@/components/interview/InterviewSummary.vue'
 
@@ -15,6 +15,7 @@ const messages = ref([])
 const loading = ref(true)
 const error = ref(null)
 const regenerating = ref(false)
+const sessionProjectId = ref(null)
 
 function isFallbackSummary(data) {
   return (
@@ -34,6 +35,8 @@ async function loadSession() {
       api.getSession(sessionId),
       api.getSessionEvents(sessionId),
     ])
+
+    sessionProjectId.value = session.project_id || null
 
     if (session.summary) {
       summary.value = session.summary
@@ -71,7 +74,7 @@ function handleDownloadSummary() {
 }
 
 function handleBackToList() {
-  router.push('/interview')
+  router.push(sessionReturnPath(sessionProjectId.value))
 }
 </script>
 

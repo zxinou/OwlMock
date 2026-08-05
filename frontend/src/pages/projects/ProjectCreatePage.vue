@@ -13,6 +13,7 @@ const location = ref('')
 const jdText = ref('')
 const file = ref(null)
 const error = ref('')
+const draftProjectId = ref('')
 
 const canSubmit = computed(() => (
   (mode.value === 'text' ? jdText.value.trim().length >= 20 : file.value)
@@ -32,14 +33,24 @@ async function submit() {
       company: company.value.trim() || null,
       location: location.value.trim() || null,
     }
-    const result = mode.value === 'text'
-      ? await projectsStore.createFromText({ ...input, jdText: jdText.value.trim() })
-      : await projectsStore.createFromImage({ ...input, file: file.value })
+    let result
+    if (draftProjectId.value) {
+      const task = await projectsStore.submitJd(draftProjectId.value, {
+        text: mode.value === 'text' ? jdText.value.trim() : '',
+        file: mode.value === 'image' ? file.value : null,
+      })
+      result = { project: { id: draftProjectId.value }, taskId: task.task_id }
+    } else {
+      result = mode.value === 'text'
+        ? await projectsStore.createFromText({ ...input, jdText: jdText.value.trim() })
+        : await projectsStore.createFromImage({ ...input, file: file.value })
+    }
     await router.push({
       name: 'project-jd-task',
       params: { projectId: result.project.id, taskId: result.taskId },
     })
   } catch (cause) {
+    if (cause.projectId) draftProjectId.value = cause.projectId
     error.value = cause.message
   }
 }
@@ -85,11 +96,11 @@ async function submit() {
 
       <p v-if="error || projectsStore.error" class="project-create-form__error" role="alert">{{ error || projectsStore.error }}</p>
       <div class="project-create-form__footer">
-        <p><Sparkles :size="15" />项目会立即保存，分析中途刷新也能恢复。</p>
+        <p><Sparkles :size="15" />{{ draftProjectId ? '项目草稿已保存，再次提交不会重复创建。' : '项目会立即保存，分析中途刷新也能恢复。' }}</p>
         <button type="submit" :disabled="!canSubmit">
           <LoaderCircle v-if="projectsStore.saving" :size="17" class="spin" />
           <Sparkles v-else :size="17" />
-          {{ projectsStore.saving ? '正在创建' : '创建并分析 JD' }}
+          {{ projectsStore.saving ? '正在提交' : draftProjectId ? '重试 JD 分析' : '创建并分析 JD' }}
         </button>
       </div>
     </form>

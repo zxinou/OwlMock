@@ -6,6 +6,7 @@ import OwlLogo from '@/components/common/OwlLogo.vue'
 import TextMode from '@/components/interview/TextMode.vue'
 import VoiceMode from '@/components/interview/VoiceMode.vue'
 import { INTERVIEW_TYPES, PROFILE_TO_TYPE, TYPE_TO_PROFILE } from '@/data/interview.js'
+import { normalizeSessionMode, sessionReturnPath } from '@/utils/interviewHelpers.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +24,8 @@ const interviewType = ref(route.query.type || 'technical')
 const profileId = computed(() => TYPE_TO_PROFILE[interviewType.value] || 'interviewer-technical')
 const sessionLoading = ref(true)
 const sessionError = ref(null)
+const sessionProjectId = ref(null)
+const returnPath = computed(() => sessionReturnPath(sessionProjectId.value))
 
 const summaryLoading = ref(false)
 
@@ -78,12 +81,12 @@ function handleEndInterview() {
 function handleExitConfirm() {
   if (exitOption.value === 'save') {
     showExitDialog.value = false
-    router.push('/interview')
+    router.push(returnPath.value)
   } else if (exitOption.value === 'summary') {
     handleGenerateSummary()
   } else {
     showExitDialog.value = false
-    router.push('/interview')
+    router.push(returnPath.value)
   }
 }
 
@@ -112,6 +115,8 @@ onMounted(async () => {
   // Validate session exists
   try {
     const session = await api.getSession(interviewId)
+    mode.value = normalizeSessionMode(session.mode)
+    sessionProjectId.value = session.project_id || null
     if (session.status === 'completed' && session.summary) {
       router.replace(`/interview/${interviewId}/summary`)
       return
@@ -140,7 +145,7 @@ onUnmounted(() => {
   <div class="interview-page">
     <header class="interview-header">
       <div class="interview-header__left">
-        <router-link to="/interview" class="back-btn">
+        <router-link :to="returnPath" class="back-btn">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
@@ -191,7 +196,7 @@ onUnmounted(() => {
 
       <div v-else-if="sessionError" class="flex flex-col items-center justify-center flex-1 gap-4">
         <p class="text-ink-muted">{{ sessionError }}</p>
-        <button class="btn btn--primary" @click="router.push('/interview')">返回列表</button>
+        <button class="btn btn--primary" @click="router.push(returnPath)">返回</button>
       </div>
 
       <div v-else-if="summaryLoading" class="flex items-center justify-center flex-1">

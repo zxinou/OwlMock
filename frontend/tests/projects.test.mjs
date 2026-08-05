@@ -71,6 +71,48 @@ test('project store exposes actionable errors and clears stale project state', a
   await assert.rejects(projects.loadProject('missing'))
   assert.equal(projects.current, null)
   assert.equal(projects.error, 'Project not found')
+
+  const listClient = {
+    async getProjects() {
+      throw new Error('Unable to load archived projects')
+    },
+  }
+  const listStore = createProjectsStore(listClient)
+  listStore.items = [{ id: 'stale-active' }]
+  listStore.total = 1
+  await assert.rejects(listStore.load({ archived: true }))
+  assert.deepEqual(listStore.items, [])
+  assert.equal(listStore.total, 0)
+})
+
+test('failed JD submission preserves one recoverable project draft for retry', async (t) => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  t.after(() => vite.close())
+  const { createProjectsStore } = await vite.ssrLoadModule('/src/stores/projects.js')
+
+  let creates = 0
+  let submissions = 0
+  const client = {
+    async createProject(input) {
+      creates += 1
+      return { id: 'draft-1', ...input }
+    },
+    async submitProjectJd(projectId) {
+      submissions += 1
+      if (submissions === 1) throw new Error('Provider temporarily unavailable')
+      return { task_id: 'retry-task', project_id: projectId }
+    },
+  }
+  const projects = createProjectsStore(client)
+
+  await assert.rejects(
+    projects.createFromText({ title: 'Role', company: null, location: null, jdText: 'A complete job description for testing.' }),
+    (error) => error.projectId === 'draft-1',
+  )
+  const retried = await projects.submitJd('draft-1', { text: 'A complete job description for testing.' })
+
+  assert.equal(retried.task_id, 'retry-task')
+  assert.equal(creates, 1)
 })
 
 test('project store creates image drafts, starts resume matches, and creates project sessions', async (t) => {
@@ -171,6 +213,9 @@ test('workspace view model derives focus, next action, score, and interview hist
   const empty = createWorkspaceViewModel({})
   assert.equal(empty.score, null)
   assert.equal(empty.nextAction.key, 'interview')
+
+  const archived = createWorkspaceViewModel({ archived_at: '2026-08-05T00:00:00', steps: [] })
+  assert.equal(archived.readOnly, true)
 })
 
 test('project routes expose list, create, workspace, and recoverable task URLs', async (t) => {
@@ -193,6 +238,10 @@ test('interview configuration creates a project-scoped session when project cont
 
   const calls = []
   const client = {
+    async updateProject(projectId, input) {
+      calls.push(['update', projectId, input])
+      return { id: projectId, current_resume_id: input.current_resume_id }
+    },
     async createProjectSession(projectId, input) {
       calls.push([projectId, input])
       return { session_id: 'session-project' }
@@ -210,7 +259,8 @@ test('interview configuration creates a project-scoped session when project cont
   })
 
   assert.equal(result.session_id, 'session-project')
-  assert.deepEqual(calls[0], ['project-1', {
+  assert.deepEqual(calls[0], ['update', 'project-1', { current_resume_id: 'resume-1' }])
+  assert.deepEqual(calls[1], ['project-1', {
     profile_id: 'interviewer-technical',
     mode: 'voice',
     github_repo_ids: ['repo-1'],

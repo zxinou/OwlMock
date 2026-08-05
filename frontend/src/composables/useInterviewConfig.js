@@ -3,7 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
 import { TYPE_TO_PROFILE } from '@/data/interview.js'
 
-export function createConfiguredSession(client, {
+export async function createConfiguredSession(client, {
   projectId,
   profileId,
   mode,
@@ -11,6 +11,9 @@ export function createConfiguredSession(client, {
   githubRepoIds,
 }) {
   if (projectId) {
+    if (resumeId) {
+      await client.updateProject(projectId, { current_resume_id: resumeId })
+    }
     return client.createProjectSession(projectId, {
       profile_id: profileId,
       mode,
