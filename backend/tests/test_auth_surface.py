@@ -67,10 +67,11 @@ async def test_unsafe_requests_reject_cross_origin_hosts() -> None:
 
 
 async def test_http_errors_include_stable_request_id_contract() -> None:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.get("/api/projects/project-does-not-exist")
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/projects/project-does-not-exist")
 
     payload = response.json()
     assert response.status_code == 404
