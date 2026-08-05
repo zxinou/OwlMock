@@ -12,7 +12,7 @@ export const routes = [
   {
     path: '/',
     name: 'root',
-    component: () => import('@/pages/PublicPreviewPage.vue'),
+    component: () => import('@/pages/HomePage.vue'),
     meta: { title: 'OwlMock - 求职准备工作台', public: true },
   },
   {

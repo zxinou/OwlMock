@@ -7,6 +7,10 @@
           alt="OwlMock 猫头鹰面试官"
           class="cta-owl mx-auto mb-4 w-[360px] max-w-full animate-hero-fade-up"
           style="animation-delay: 0.1s"
+          width="2142"
+          height="1537"
+          loading="lazy"
+          decoding="async"
         >
 
         <h2 class="text-3xl lg:text-5xl font-bold mb-4" style="font-family: var(--font-heading)">准备好了吗？</h2>
@@ -18,7 +22,7 @@
           class="btn btn--primary no-underline inline-flex"
           style="font-size: var(--text-lg); padding: 1rem 2.5rem"
         >
-          立即开始，免费使用
+          开始使用 OwlMock
         </router-link>
       </div>
     </div>
@@ -31,8 +35,4 @@
   mix-blend-mode: multiply;
 }
 
-html.dark .cta-owl {
-  filter: invert(1);
-  mix-blend-mode: screen;
-}
 </style>

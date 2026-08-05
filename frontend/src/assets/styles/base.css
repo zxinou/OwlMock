@@ -6,31 +6,32 @@
    OwlMock product tokens
    ============================================ */
 
-:root {
+:root,
+.landing-page {
   /* Color Palette */
-  --color-base:       #F6FBFA;
-  --color-surface:    #E8F7F2;
-  --color-surface-alt:#D6F0E8;
-  --color-primary:    #0F766E;
-  --color-primary-light: #14B8A6;
-  --color-primary-dark:  #115E59;
-  --color-secondary:  #EA580C;
-  --color-secondary-light: #FB923C;
-  --color-accent:     #DC2626;
-  --color-accent-light: #FCA5A5;
-  --color-ink:        #172033;
-  --color-ink-light:  #344257;
-  --color-ink-muted:  #64748B;
-  --color-border:     #B8E4D8;
-  --color-border-light:#D7F0E8;
+  --color-base:       #F7FAF7;
+  --color-surface:    #EEF4F1;
+  --color-surface-alt:#E2ECE7;
+  --color-primary:    #2D6B65;
+  --color-primary-light: #5A918A;
+  --color-primary-dark:  #1E514D;
+  --color-secondary:  #D5A43F;
+  --color-secondary-light: #E7C86F;
+  --color-accent:     #D86C57;
+  --color-accent-light: #F0A08C;
+  --color-ink:        #17312F;
+  --color-ink-light:  #49615E;
+  --color-ink-muted:  #5F706C;
+  --color-border:     #CDDCD6;
+  --color-border-light:#E1EBE7;
   --color-white:      #FFFFFF;
   --color-on-primary: #FFFFFF;
-  --color-on-secondary: #431407;
-  --color-rail: #E7F5F1;
-  --color-rail-hover: #CAEADF;
+  --color-on-secondary: #382B10;
+  --color-rail: #EEF4F1;
+  --color-rail-hover: #D9E8E2;
   --color-rail-ink: #17312F;
-  --color-rail-muted: #466962;
-  --color-rail-subtle: #668981;
+  --color-rail-muted: #526D68;
+  --color-rail-subtle: #718983;
 
   /* Typography */
   --font-heading: 'Plus Jakarta Sans', 'Noto Sans SC', sans-serif;
@@ -48,7 +49,7 @@
   --text-4xl:  2.25rem;
   --text-5xl:  3rem;
   --text-6xl:  3.75rem;
-  --text-hero: clamp(2.5rem, 5vw, 4.5rem);
+  --text-hero: 4rem;
 
   --leading-tight:  1.2;
   --leading-normal: 1.6;
@@ -82,11 +83,11 @@
   --radius-full: 9999px;
 
   /* Shadows */
-  --shadow-sm:   0 1px 3px rgba(23, 32, 51, 0.05);
-  --shadow-md:   0 4px 16px rgba(23, 32, 51, 0.07);
-  --shadow-lg:   0 8px 32px rgba(23, 32, 51, 0.10);
-  --shadow-xl:   0 16px 48px rgba(23, 32, 51, 0.13);
-  --shadow-glow: 0 0 0 4px rgba(15, 118, 110, 0.16);
+  --shadow-sm:   0 1px 3px rgba(23, 49, 47, 0.05);
+  --shadow-md:   0 4px 16px rgba(23, 49, 47, 0.07);
+  --shadow-lg:   0 8px 32px rgba(23, 49, 47, 0.10);
+  --shadow-xl:   0 16px 48px rgba(23, 49, 47, 0.13);
+  --shadow-glow: 0 0 0 4px rgba(45, 107, 101, 0.16);
 
   /* Transitions */
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
@@ -106,35 +107,35 @@
 
 /* ---- Dark Mode ---- */
 .dark {
-  --color-base:       #10191D;
-  --color-surface:    #16272A;
-  --color-surface-alt:#1E3537;
-  --color-primary:    #5EEAD4;
-  --color-primary-light: #99F6E4;
-  --color-primary-dark:  #2DD4BF;
-  --color-secondary:  #FDBA74;
-  --color-secondary-light: #FED7AA;
-  --color-accent:     #FCA5A5;
-  --color-accent-light: #FECACA;
-  --color-ink:        #F1F5F9;
-  --color-ink-light:  #CBD5E1;
-  --color-ink-muted:  #94A3B8;
-  --color-border:     #2C5652;
-  --color-border-light:#21433F;
-  --color-white:      #16272A;
-  --color-on-primary: #042F2E;
-  --color-on-secondary: #431407;
-  --color-rail: #112D2A;
-  --color-rail-hover: #1A4943;
+  --color-base:       #0B1615;
+  --color-surface:    #122321;
+  --color-surface-alt:#19302D;
+  --color-primary:    #75B8AF;
+  --color-primary-light: #9BD0C8;
+  --color-primary-dark:  #4D9189;
+  --color-secondary:  #E4B957;
+  --color-secondary-light: #F0D17F;
+  --color-accent:     #E88A72;
+  --color-accent-light: #F4B4A3;
+  --color-ink:        #EAF5F1;
+  --color-ink-light:  #B8D0CA;
+  --color-ink-muted:  #86A39D;
+  --color-border:     #2A4A45;
+  --color-border-light:#203B37;
+  --color-white:      #122321;
+  --color-on-primary: #102B28;
+  --color-on-secondary: #2F250E;
+  --color-rail: #102522;
+  --color-rail-hover: #1C3D38;
   --color-rail-ink: #ECFDF5;
-  --color-rail-muted: #B5D9D0;
-  --color-rail-subtle: #83B5A9;
+  --color-rail-muted: #B8D0CA;
+  --color-rail-subtle: #86A39D;
 
   --shadow-sm:   0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow-md:   0 4px 16px rgba(0, 0, 0, 0.3);
   --shadow-lg:   0 8px 32px rgba(0, 0, 0, 0.35);
   --shadow-xl:   0 16px 48px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 0 4px rgba(94, 234, 212, 0.22);
+  --shadow-glow: 0 0 0 4px rgba(117, 184, 175, 0.22);
 }
 
 /* ---- Base Reset ---- */
@@ -217,14 +218,13 @@
   }
 
   ::selection {
-    background: rgba(20, 184, 166, 0.24);
+    background: rgba(45, 107, 101, 0.25);
   }
 }
 
 /* ---- Global Component Overrides ---- */
-.dark .nav-glass,
 .dark .topbar-glass {
-  background: rgba(22, 39, 42, 0.92) !important;
+  background: rgba(18, 35, 33, 0.92) !important;
 }
 
 body.app-navigation-open {
@@ -323,7 +323,7 @@ body.app-navigation-open {
   .btn--primary:hover {
     background: var(--color-primary-dark);
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(15, 118, 110, 0.3);
+    box-shadow: 0 8px 24px rgba(45, 107, 101, 0.3);
   }
 
   .btn--primary:active {
@@ -349,7 +349,7 @@ body.app-navigation-open {
   }
 
   .btn--ghost:hover {
-    background: rgba(15, 118, 110, 0.08);
+    background: rgba(45, 107, 101, 0.08);
     transform: translateY(-1px);
   }
 
@@ -381,7 +381,7 @@ body.app-navigation-open {
   .reveal {
     opacity: 0;
     transform: translateY(24px);
-    transition: all 0.8s var(--ease-out);
+    transition: opacity var(--duration-slow) var(--ease-out), transform var(--duration-slow) var(--ease-out);
   }
 
   .reveal.visible {
@@ -419,5 +419,19 @@ body.app-navigation-open {
   .reveal {
     opacity: 1;
     transform: none;
+  }
+}
+
+@media (max-width: 768px) {
+  :root,
+  .landing-page {
+    --text-hero: 3rem;
+  }
+}
+
+@media (max-width: 480px) {
+  :root,
+  .landing-page {
+    --text-hero: 2.5rem;
   }
 }
