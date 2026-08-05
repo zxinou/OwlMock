@@ -1,279 +1,256 @@
-/**
- * API service layer
- * GitHub analysis uses real backend; other endpoints use mock adapter.
- */
-
-import { mockAdapter } from './mock.js'
-
-// Mock adapter for non-GitHub endpoints
-async function mockRequest(path, options = {}) {
-  await new Promise((r) => setTimeout(r, 2000))
-  return mockAdapter(path, options)
+export class ApiError extends Error {
+  constructor(message, { status = 0, code = 'request_failed', requestId = null, detail = null } = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.requestId = requestId
+    this.detail = detail
+  }
 }
 
-// Real API call to FastAPI backend
-async function realRequest(path, options = {}) {
-  const res = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    const rawDetail = typeof body?.detail === 'string' ? body.detail : ''
-    const looksTechnical = /LLM|invalid JSON|traceback|stack trace|API error/i.test(rawDetail)
-    const detail = looksTechnical || !rawDetail
-      ? (res.status >= 500 ? '分析服务暂时没有完成，请稍后重试' : '请求没有完成，请检查输入后重试')
-      : rawDetail
-    throw new Error(detail)
+let unauthorizedHandler = null
+
+export function setUnauthorizedHandler(handler) {
+  unauthorizedHandler = typeof handler === 'function' ? handler : null
+}
+
+export async function request(path, options = {}) {
+  const headers = new Headers(options.headers || {})
+  const isForm = options.body instanceof FormData
+  if (options.body && !isForm && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
   }
-  if (res.status === 204) {
-    return null
+  let response
+  try {
+    response = await fetch(`/api${path}`, {
+      credentials: 'same-origin',
+      ...options,
+      headers,
+    })
+  } catch {
+    throw new ApiError('无法连接到 OwlMock 服务，请检查网络后重试。', {
+      code: 'network_error',
+    })
   }
-  return res.json()
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    const message = body.message
+      || (typeof body.detail === 'string' ? body.detail : null)
+      || (response.status >= 500
+        ? '服务暂时无法完成请求，请稍后重试。'
+        : '请求未完成，请检查输入后重试。')
+    const error = new ApiError(message, {
+      status: response.status,
+      code: body.code || 'request_failed',
+      requestId: body.request_id || response.headers?.get?.('X-Request-ID') || null,
+      detail: body.detail,
+    })
+    if (response.status === 401 && unauthorizedHandler) {
+      try {
+        await unauthorizedHandler(error)
+      } catch {
+        // Navigation failures must not replace the original API error.
+      }
+    }
+    throw error
+  }
+  if (response.status === 204) return null
+  return response.json()
+}
+
+function json(method, body) {
+  return { method, body: JSON.stringify(body) }
+}
+
+function upload(path, file) {
+  const body = new FormData()
+  body.append('file', file)
+  return request(path, { method: 'POST', body })
 }
 
 export const api = {
-  // GitHub analysis (real backend)
-  analyzeGithub(url) {
-    return realRequest('/analysis', {
-      method: 'POST',
-      body: JSON.stringify({ repo_url: url }),
+  login(password) {
+    return request('/auth/login', json('POST', { password }))
+  },
+  getAuthSession() {
+    return request('/auth/session')
+  },
+  logout() {
+    return request('/auth/logout', { method: 'POST' })
+  },
+  getSystemStatus() {
+    return request('/system/status')
+  },
+
+  getProjects({ archived = false, limit = 50, offset = 0 } = {}) {
+    const params = new URLSearchParams({
+      archived: String(archived),
+      limit: String(limit),
+      offset: String(offset),
     })
+    return request(`/projects?${params}`)
+  },
+  getProject(projectId) {
+    return request(`/projects/${projectId}`)
+  },
+  createProject(input) {
+    return request('/projects', json('POST', input))
+  },
+  updateProject(projectId, input) {
+    return request(`/projects/${projectId}`, json('PATCH', input))
+  },
+  submitProjectJd(projectId, text) {
+    return request(`/projects/${projectId}/jd-analyses`, json('POST', { text }))
+  },
+  submitProjectJdImage(projectId, file) {
+    return upload(`/projects/${projectId}/jd-analyses/image`, file)
+  },
+  submitProjectResumeMatch(projectId, resumeId) {
+    return request(
+      `/projects/${projectId}/resume-matches`,
+      json('POST', { resume_id: resumeId }),
+    )
+  },
+  createProjectSession(projectId, input) {
+    return request(`/projects/${projectId}/sessions`, json('POST', input))
   },
 
+  analyzeGithub(url) {
+    return request('/analysis', json('POST', { repo_url: url }))
+  },
   getGithubRepos() {
-    return realRequest('/analysis')
+    return request('/analysis')
   },
-
   getGithubRepo(id) {
-    return realRequest(`/analysis/${id}`)
+    return request(`/analysis/${id}`)
   },
-
   getGithubDeep(id) {
-    return realRequest(`/analysis/${id}`)
+    return request(`/analysis/${id}`)
   },
-
   deleteGithubRepo(id) {
-    return realRequest(`/analysis/${id}`, { method: 'DELETE' })
+    return request(`/analysis/${id}`, { method: 'DELETE' })
   },
 
-  // Task progress (real backend)
   getTaskStatus(taskId) {
-    return realRequest(`/tasks/${taskId}`)
+    return request(`/tasks/${taskId}`)
   },
-
   getTaskStreamUrl(taskId) {
     return `/api/tasks/${taskId}/stream`
   },
 
-  // JD analysis (real backend)
   analyzeJd(text) {
-    return realRequest('/jd/analyze', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    })
+    return request('/jd/analyze', json('POST', { text }))
   },
-
-  submitJd(text, userId = 'default') {
-    return realRequest('/jd/analyses', {
-      method: 'POST',
-      body: JSON.stringify({ text, user_id: userId }),
-    })
+  submitJd(text) {
+    return request('/jd/analyses', json('POST', { text }))
   },
-
-  async analyzeJdImage(file, userId = 'default') {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('user_id', userId)
-    const res = await fetch('/api/jd/analyze-image', {
-      method: 'POST',
-      body: formData,
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: `Analyze failed: ${res.status}` }))
-      throw new Error(err.detail || `Analyze failed: ${res.status}`)
-    }
-    return res.json()
+  analyzeJdImage(file) {
+    return upload('/jd/analyze-image', file)
   },
-
-  async submitJdImage(file, userId = 'default') {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('user_id', userId)
-    const res = await fetch('/api/jd/analyses/image', {
-      method: 'POST',
-      body: formData,
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: `Analyze failed: ${res.status}` }))
-      throw new Error(err.detail || `Analyze failed: ${res.status}`)
-    }
-    return res.json()
+  submitJdImage(file) {
+    return upload('/jd/analyses/image', file)
   },
-
   getJdAnalysis(id) {
-    return realRequest(`/jd/analyses/${id}`)
+    return request(`/jd/analyses/${id}`)
   },
-
   resumeJdAnalysis(id) {
-    return realRequest(`/jd/analyses/${id}/resume`, { method: 'POST' })
+    return request(`/jd/analyses/${id}/resume`, { method: 'POST' })
   },
-
-  getJdAnalyses(userId = 'default') {
-    return realRequest(`/jd/analyses?user_id=${encodeURIComponent(userId)}`)
+  getJdAnalyses() {
+    return request('/jd/analyses')
   },
-
   deleteJdAnalysis(id) {
-    return realRequest(`/jd/analyses/${id}`, { method: 'DELETE' })
+    return request(`/jd/analyses/${id}`, { method: 'DELETE' })
+  },
+  deleteJdAnalyses(ids) {
+    return request('/jd/analyses/batch', json('DELETE', { ids }))
   },
 
-  deleteJdAnalyses(ids, userId = 'default') {
-    return realRequest('/jd/analyses/batch', {
-      method: 'DELETE',
-      body: JSON.stringify({ ids, user_id: userId }),
-    })
+  getResumes() {
+    return request('/resumes')
   },
-
-  // Resume CRUD (real backend)
-  getResumes(userId = 'default') {
-    return realRequest(`/resumes?user_id=${encodeURIComponent(userId)}`)
-  },
-
   getResume(resumeId) {
-    return realRequest(`/resumes/${resumeId}`)
+    return request(`/resumes/${resumeId}`)
   },
-
-  async uploadResume(file, userId = 'default') {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('user_id', userId)
-    const res = await fetch('/api/resumes/upload', {
-      method: 'POST',
-      body: formData,
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: `Upload failed: ${res.status}` }))
-      throw new Error(err.detail || `Upload failed: ${res.status}`)
-    }
-    return res.json()
+  uploadResume(file) {
+    return upload('/resumes/upload', file)
   },
-
   deleteResume(resumeId) {
-    return realRequest(`/resumes/${resumeId}`, { method: 'DELETE' })
+    return request(`/resumes/${resumeId}`, { method: 'DELETE' })
   },
-
   analyzeResume(resumeId, force = false) {
-    return realRequest(`/resumes/${resumeId}/analyze?force=${force}`, {
-      method: 'POST',
-    })
+    return request(`/resumes/${resumeId}/analyze?force=${force}`, { method: 'POST' })
   },
 
-  // Resume to JD matching (real backend)
-  submitResumeMatch({ resumeId, jobDescription, userId = 'default' }) {
-    return realRequest('/resume-matches', {
-      method: 'POST',
-      body: JSON.stringify({
-        resume_id: resumeId,
-        job_description: jobDescription,
-        user_id: userId,
-      }),
-    })
+  submitResumeMatch({ resumeId, jobDescription }) {
+    return request('/resume-matches', json('POST', {
+      resume_id: resumeId,
+      job_description: jobDescription,
+    }))
   },
-
-  submitResumeMatchBatch({ resumeId, jdAnalysisIds, userId = 'default' }) {
-    return realRequest('/resume-matches/batch', {
-      method: 'POST',
-      body: JSON.stringify({
-        resume_id: resumeId,
-        jd_analysis_ids: jdAnalysisIds,
-        user_id: userId,
-      }),
-    })
+  submitResumeMatchBatch({ resumeId, jdAnalysisIds }) {
+    return request('/resume-matches/batch', json('POST', {
+      resume_id: resumeId,
+      jd_analysis_ids: jdAnalysisIds,
+    }))
   },
-
-  getResumeMatchBatch(batchId, userId = 'default') {
-    return realRequest(`/resume-match-batches/${batchId}?user_id=${encodeURIComponent(userId)}`)
+  getResumeMatchBatch(batchId) {
+    return request(`/resume-match-batches/${batchId}`)
   },
-
-  getResumeMatches(userId = 'default') {
-    return realRequest(`/resume-matches?user_id=${encodeURIComponent(userId)}`)
+  getResumeMatches() {
+    return request('/resume-matches')
   },
-
   getResumeMatch(matchId) {
-    return realRequest(`/resume-matches/${matchId}`)
+    return request(`/resume-matches/${matchId}`)
   },
-
   resumeResumeMatch(matchId) {
-    return realRequest(`/resume-matches/${matchId}/resume`, { method: 'POST' })
+    return request(`/resume-matches/${matchId}/resume`, { method: 'POST' })
   },
-
   deleteResumeMatch(matchId) {
-    return realRequest(`/resume-matches/${matchId}`, { method: 'DELETE' })
+    return request(`/resume-matches/${matchId}`, { method: 'DELETE' })
+  },
+  deleteResumeMatches(ids) {
+    return request('/resume-matches/batch', json('DELETE', { ids }))
   },
 
-  deleteResumeMatches(ids, userId = 'default') {
-    return realRequest('/resume-matches/batch', {
-      method: 'DELETE',
-      body: JSON.stringify({ ids, user_id: userId }),
-    })
-  },
-
-  // Interview sessions (real backend)
   createSession({ profileId, mode = 'text', resumeId = null, githubRepoIds = [] }) {
-    return realRequest('/sessions', {
-      method: 'POST',
-      body: JSON.stringify({
-        profile_id: profileId,
-        mode,
-        resume_id: resumeId,
-        github_repo_ids: githubRepoIds,
-      }),
-    })
+    return request('/sessions', json('POST', {
+      profile_id: profileId,
+      mode,
+      resume_id: resumeId,
+      github_repo_ids: githubRepoIds,
+    }))
   },
-
-  getSessions({ userId = 'default', status = null, profileId = null } = {}) {
-    const params = new URLSearchParams({ user_id: userId })
+  getSessions({ status = null, profileId = null } = {}) {
+    const params = new URLSearchParams()
     if (status) params.set('status', status)
     if (profileId) params.set('profile_id', profileId)
-    return realRequest(`/sessions?${params.toString()}`)
+    const query = params.size ? `?${params}` : ''
+    return request(`/sessions${query}`)
   },
-
   getSession(sessionId) {
-    return realRequest(`/sessions/${sessionId}`)
+    return request(`/sessions/${sessionId}`)
   },
-
   deleteSession(sessionId) {
-    return realRequest(`/sessions/${sessionId}`, { method: 'DELETE' })
+    return request(`/sessions/${sessionId}`, { method: 'DELETE' })
   },
-
   getSessionEvents(sessionId) {
-    return realRequest(`/sessions/${sessionId}/events`)
+    return request(`/sessions/${sessionId}/events`)
   },
-
   sendSSEMessage(sessionId, text) {
-    return realRequest(`/sessions/${sessionId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    })
+    return request(`/sessions/${sessionId}/messages`, json('POST', { text }))
   },
-
   streamEvents(sessionId) {
     return new EventSource(`/api/sessions/${sessionId}/stream`)
   },
-
   finalizeSession(sessionId) {
-    return realRequest(`/sessions/${sessionId}/finalize`, {
-      method: 'POST',
-    })
+    return request(`/sessions/${sessionId}/finalize`, { method: 'POST' })
   },
-
-  getVoiceWebSocketUrl(sessionId, { profileId, userId = 'default', mode = 'voice' } = {}) {
-    const params = new URLSearchParams({
-      profile: profileId,
-      user_id: userId,
-      mode,
-    })
+  getVoiceWebSocketUrl(sessionId, { profileId, mode = 'voice' } = {}) {
+    const params = new URLSearchParams({ profile: profileId, mode })
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.host}/ws/voice/${sessionId}?${params.toString()}`
+    return `${protocol}//${window.location.host}/ws/voice/${sessionId}?${params}`
   },
 }

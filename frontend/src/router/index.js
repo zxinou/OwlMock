@@ -1,106 +1,171 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { h } from 'vue'
+import {
+  RouterLink,
+  createMemoryHistory,
+  createRouter,
+  createWebHistory,
+} from 'vue-router'
+import { ArrowRight, BriefcaseBusiness } from 'lucide-vue-next'
 
-const routes = [
+import { setUnauthorizedHandler } from '@/api/index.js'
+import { authStore } from '@/stores/auth.js'
+import { createUnauthorizedRedirect, resolveAuthNavigation } from './authGuard.js'
+
+const ProjectIndexPlaceholder = {
+  name: 'ProjectIndexPlaceholder',
+  render() {
+    return h('section', { class: 'workspace-empty', 'aria-labelledby': 'projects-heading' }, [
+      h('div', { class: 'workspace-empty__icon', 'aria-hidden': 'true' }, [
+        h(BriefcaseBusiness, { size: 24, strokeWidth: 1.8 }),
+      ]),
+      h('p', { class: 'workspace-empty__eyebrow' }, '工作区'),
+      h('h1', { id: 'projects-heading' }, '岗位项目'),
+      h('p', { class: 'workspace-empty__copy' }, '暂无岗位项目'),
+      h(RouterLink, { to: { name: 'jd' }, class: 'workspace-empty__action' }, {
+        default: () => [
+          '分析岗位 JD',
+          h(ArrowRight, { size: 16, strokeWidth: 2 }),
+        ],
+      }),
+    ])
+  },
+}
+
+export const routes = [
   {
     path: '/',
-    name: 'home',
-    component: () => import('@/pages/HomePage.vue'),
-    meta: { title: 'OwlMock — AI 求职助手' },
+    name: 'root',
+    component: ProjectIndexPlaceholder,
+    meta: { title: 'OwlMock', appShell: true, section: '岗位项目' },
+  },
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/pages/LoginPage.vue'),
+    meta: { title: '登录 - OwlMock', public: true },
+  },
+  {
+    path: '/projects',
+    name: 'projects',
+    component: ProjectIndexPlaceholder,
+    meta: { title: '岗位项目 - OwlMock', appShell: true, section: '岗位项目' },
   },
   {
     path: '/interview',
     name: 'interview-list',
     component: () => import('@/pages/InterviewListPage.vue'),
-    meta: { title: '模拟面试 — OwlMock' },
+    meta: { title: '模拟面试 - OwlMock' },
   },
   {
     path: '/interview/config',
     name: 'interview-config',
     component: () => import('@/pages/InterviewConfigPage.vue'),
-    meta: { title: '面试配置 — OwlMock' },
+    meta: { title: '面试配置 - OwlMock' },
   },
   {
     path: '/interview/:id/summary',
     name: 'interview-summary',
     component: () => import('@/pages/InterviewSummaryPage.vue'),
-    meta: { title: '面试总结 — OwlMock' },
+    meta: { title: '面试总结 - OwlMock' },
   },
   {
     path: '/interview/:id',
     name: 'interview-session',
     component: () => import('@/pages/InterviewSessionPage.vue'),
-    meta: { title: '模拟面试 — OwlMock' },
+    meta: { title: '模拟面试 - OwlMock' },
   },
   {
     path: '/analysis/github',
     component: () => import('@/layouts/GitHubLayout.vue'),
-    meta: { title: 'GitHub 源码分析 — OwlMock' },
+    meta: { title: 'GitHub 源码分析 - OwlMock' },
     children: [
       { path: '', name: 'github-list', component: () => import('@/pages/github/GitHubListPage.vue') },
-      { path: ':id', name: 'github-overview', component: () => import('@/pages/github/GitHubOverviewPage.vue'), meta: { title: '仓库概览 — OwlMock' } },
-      { path: ':id/deep', name: 'github-deep', component: () => import('@/pages/github/GitHubDeepPage.vue'), meta: { title: '深度分析 — OwlMock' } },
+      { path: ':id', name: 'github-overview', component: () => import('@/pages/github/GitHubOverviewPage.vue'), meta: { title: '仓库概览 - OwlMock' } },
+      { path: ':id/deep', name: 'github-deep', component: () => import('@/pages/github/GitHubDeepPage.vue'), meta: { title: '深度分析 - OwlMock' } },
     ],
   },
   {
     path: '/analysis/jd',
     name: 'jd',
     component: () => import('@/pages/JdPage.vue'),
-    meta: { title: 'JD 智能分析 — OwlMock', contentWidth: 'default' },
+    meta: { title: 'JD 智能分析 - OwlMock', contentWidth: 'default' },
   },
   {
     path: '/analysis/jd/tasks/:taskId',
     name: 'jd-task',
     component: () => import('@/pages/jd/JdTaskPage.vue'),
-    meta: { title: 'JD 分析进度 — OwlMock', contentWidth: 'narrow' },
+    meta: { title: 'JD 分析进度 - OwlMock', contentWidth: 'narrow' },
   },
   {
     path: '/analysis/jd/:analysisId',
     name: 'jd-report',
     component: () => import('@/pages/jd/JdReportPage.vue'),
-    meta: { title: 'JD 分析报告 — OwlMock', contentWidth: 'wide' },
+    meta: { title: 'JD 分析报告 - OwlMock', contentWidth: 'wide' },
   },
   {
     path: '/analysis/resume',
     name: 'resume',
     component: () => import('@/pages/ResumePage.vue'),
-    meta: { title: '简历匹配分析 — OwlMock', contentWidth: 'default' },
+    meta: { title: '简历匹配分析 - OwlMock', contentWidth: 'default' },
   },
   {
     path: '/analysis/resume/tasks/:taskId',
     name: 'resume-match-task',
     component: () => import('@/pages/resume/ResumeMatchTaskPage.vue'),
-    meta: { title: '简历匹配进度 — OwlMock', contentWidth: 'narrow' },
+    meta: { title: '简历匹配进度 - OwlMock', contentWidth: 'narrow' },
   },
   {
     path: '/analysis/resume/batches/:batchId',
     name: 'resume-match-batch',
     component: () => import('@/pages/resume/ResumeMatchBatchPage.vue'),
-    meta: { title: '岗位匹配对比 — OwlMock', contentWidth: 'wide' },
+    meta: { title: '岗位匹配对比 - OwlMock', contentWidth: 'wide' },
   },
   {
     path: '/analysis/resume/legacy/:resumeId',
     name: 'resume-legacy-report',
     component: () => import('@/pages/resume/ResumeLegacyReportPage.vue'),
-    meta: { title: '旧版简历分析 — OwlMock', contentWidth: 'default' },
+    meta: { title: '旧版简历分析 - OwlMock', contentWidth: 'default' },
   },
   {
     path: '/analysis/resume/:matchId',
     name: 'resume-match-report',
     component: () => import('@/pages/resume/ResumeMatchReportPage.vue'),
-    meta: { title: '简历匹配报告 — OwlMock', contentWidth: 'wide' },
+    meta: { title: '简历匹配报告 - OwlMock', contentWidth: 'wide' },
   },
 ]
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes,
-  scrollBehavior() {
-    return { top: 0 }
-  },
-})
+function createDefaultHistory() {
+  return typeof window === 'undefined' ? createMemoryHistory() : createWebHistory()
+}
 
-router.beforeEach((to) => {
-  document.title = to.meta.title || 'OwlMock'
-})
+export function createAppRouter({
+  history = createDefaultHistory(),
+  auth = authStore,
+  handleUnauthorized = true,
+} = {}) {
+  const router = createRouter({
+    history,
+    routes,
+    scrollBehavior() {
+      return { top: 0 }
+    },
+  })
 
-export default router
+  router.beforeEach(async (to) => {
+    const decision = await resolveAuthNavigation(to, auth)
+    if (decision !== true) return decision
+
+    if (typeof document !== 'undefined') {
+      document.title = to.meta.title || 'OwlMock'
+    }
+    return true
+  })
+
+  if (handleUnauthorized) {
+    setUnauthorizedHandler(createUnauthorizedRedirect(auth, router))
+  }
+
+  return router
+}
+
+export default createAppRouter({ handleUnauthorized: typeof window !== 'undefined' })
